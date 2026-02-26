@@ -117,13 +117,18 @@ AgenticWorkflow/
 │   └── settings.json                      ← Gemini CLI 설정 (AGENTS.md 추가 로드)
 ├── .claude/
 │   ├── settings.json                      ← Hook 설정 (Setup + SessionEnd)
-│   ├── agents/                             ← Sub-agent 정의
+│   ├── agents/                             ← Sub-agent 정의 (프레임워크 코어 3 + 워크플로우 도메인 32)
 │   │   ├── translator.md                  (영→한 번역 전문 에이전트 — glossary 기반 용어 일관성)
 │   │   ├── reviewer.md                    (적대적 코드/산출물 리뷰어 — Enhanced L2 품질 계층, 읽기 전용)
-│   │   └── fact-checker.md                (적대적 사실 검증 에이전트 — 독립 소스 대비 claim-by-claim 확인)
+│   │   ├── fact-checker.md                (적대적 사실 검증 에이전트 — 독립 소스 대비 claim-by-claim 확인)
+│   │   └── [domain-agents]/*.md           (워크플로우별 도메인 에이전트 — site-recon, crawler-core-dev, anti-block-dev 등 32개. 워크플로우 구현 시 자동 생성)
 │   ├── commands/                           ← Slash Commands
 │   │   ├── install.md                     (Setup Init 검증 결과 분석 — /install)
-│   │   └── maintenance.md                 (Setup Maintenance 건강 검진 — /maintenance)
+│   │   ├── maintenance.md                 (Setup Maintenance 건강 검진 — /maintenance)
+│   │   ├── start.md                       (워크플로우 시작 진입점 — /start, 자연어 트리거 자동 매핑)
+│   │   ├── review-research.md             (Research Phase 검토 — /review-research)
+│   │   ├── review-architecture.md         (Planning Phase 검토 — /review-architecture)
+│   │   └── review-final.md                (Implementation Phase 완료 검토 — /review-final)
 │   ├── hooks/scripts/                     ← Context Preservation System + Setup Hooks + Safety Hooks
 │   │   ├── context_guard.py               (Hook 통합 디스패처 — 4개 이벤트의 단일 진입점)
 │   │   ├── _context_lib.py                (공유 라이브러리 — 파싱, 생성, SOT 캡처, Smart Throttling, Autopilot 상태 읽기·검증, ULW 감지, 절삭 상수 중앙화, sot_paths() 경로 통합, 다단계 전환 감지, 결정 품질 태그 정렬, Error Taxonomy 12패턴+Resolution 매칭, Success Patterns(Edit/Write→Bash 성공 시퀀스 추출), IMMORTAL-aware 압축+감사 추적, E5 Guard 중앙화(is_rich_snapshot+update_latest_with_guard), Knowledge Archive 통합(archive_and_index_session — 부분 실패 격리), 경로 태그 추출(extract_path_tags), KI 스키마 검증(_validate_session_facts — RLM 필수 키 보장), SOT 스키마 검증(validate_sot_schema — 워크플로우 state.yaml 구조 무결성 8항목 검증: S1-S6 기본 + S7 pacs 구조(S7a-S7e: dimensions·score·weak_dimension·history·pre_mortem_flag) + S8 active_team 구조(S8a-S8e: name·status·tasks_completed·tasks_pending·completed_summaries)), Quality Gate 상태 추출(_extract_quality_gate_state — pacs/review/verification 로그에서 최신 단계 품질 게이트 상태를 IMMORTAL 스냅샷에 보존), Adversarial Review P1 검증(validate_review_output+parse_review_verdict+calculate_pacs_delta+validate_review_sequence — Enhanced L2 결정론적 검증), Translation P1 검증(validate_translation_output T1-T7 + check_glossary_freshness T8 + verify_pacs_arithmetic T9 범용 + validate_verification_log V1a-V1c), Predictive Debugging P1(aggregate_risk_scores+validate_risk_scores RS1-RS6+_RISK_WEIGHTS 13개 가중치+_RECENCY_DECAY_DAYS 감쇠), Cross-Step Traceability P1 검증(validate_cross_step_traceability CT1-CT5 + _TRACE_MARKER_RE + _HEADING_SLUG_RE), Domain Knowledge Structure P1 검증(validate_domain_knowledge DK1-DK7 + _DKS_REF_RE + _DKS_ID_RE), Abductive Diagnosis Layer(diagnose_failure_context 사전 증거 수집 + validate_diagnosis_log AD1-AD10 사후 검증 + _extract_diagnosis_patterns KA 아카이빙 + Fast-Path FP1-FP3 + 가설 우선순위 H1/H2/H3), 모듈 레벨 regex 컴파일(9개+8개+8개+4개+5개 패턴 — 프로세스당 1회))
@@ -155,17 +160,44 @@ AgenticWorkflow/
 │       ├── workflow-generator/            ← 워크플로우 설계·생성 스킬
 │       │   ├── SKILL.md
 │       │   └── references/                (claude-code-patterns, workflow-template, document-analysis-guide, context-injection-patterns, autopilot-decision-template, state.yaml.example)
+│       ├── skill-creator/                 ← 스킬 생성 가이드 (DNA 유전 포함)
+│       │   └── SKILL.md
+│       ├── subagent-creator/              ← 서브에이전트 생성 가이드 (DNA 유전 포함)
+│       │   └── SKILL.md
 │       └── doctoral-writing/              ← 박사급 학술 글쓰기 스킬
 │           ├── SKILL.md
 │           └── references/                (clarity-checklist, common-issues, before-after-examples, discipline-guides, korean-quick-reference)
 ├── translations/                          ← 번역 산출물 + 용어 사전
 │   └── glossary.yaml                      (@translator 용어 사전 — 워크플로우 간 용어 일관성 유지)
+├── ORCHESTRATOR-PLAYBOOK.md                ← 워크플로우 실행 가이드 (Orchestrator가 각 단계를 실행하는 절차서)
 ├── prompt/                                ← 프롬프트 자료
+│   ├── workflow.md                        (워크플로우 정의 — workflow-generator 산출물)
 │   ├── crystalize-prompt.md               (프롬프트 압축 기법)
 │   ├── distill-partner.md                 (에센스 추출 및 최적화 인터뷰)
 │   └── crawling-skill-sample.md           (크롤링 스킬 샘플)
-└── coding-resource/                       ← 이론적 기반 자료
-    └── recursive language models.pdf      (장기기억 구현 이론)
+├── coding-resource/                       ← 이론적 기반 자료
+│   ├── PRD.md                             (프로젝트 요구사항 정의서 — 워크플로우 입력)
+│   └── recursive language models.pdf      (장기기억 구현 이론)
+├── scripts/                               ← 워크플로우 오케스트레이션 스크립트 (P1 결정론적)
+│   ├── sot_manager.py                     (SOT 원자적 읽기/쓰기/검증 — fcntl 파일 잠금)
+│   ├── workflow_starter.py                (워크플로우 시작 컨텍스트 생성기 — /start 진입점)
+│   ├── validate_step_transition.py        (단계 전환 사전 조건 검증 — ST1-ST6)
+│   ├── run_quality_gates.py               (품질 게이트 시퀀서 — L0→L1→L1.5→L2 순서 보장)
+│   ├── extract_orchestrator_step_guide.py (Playbook에서 단계별 가이드 추출 — 에이전트 컨텍스트 주입)
+│   ├── validate_site_coverage.py          (44개 사이트 커버리지 검증)
+│   ├── validate_technique_coverage.py     (56개 분석 기법 커버리지 검증)
+│   ├── validate_code_structure.py         (코드 구조 규격 검증 — CS1-CS5)
+│   ├── validate_data_schema.py            (Parquet/Config 스키마 검증 — DS1-DS4)
+│   ├── validate_team_state.py             (팀 라이프사이클 일관성 검증 — TS1-TS5)
+│   └── [preprocessors]/*.py               (전처리/후처리 스크립트 — extract_*, filter_*, merge_*, distribute_*, generate_*, split_*, calculate_*, verify_*)
+├── tests/                                 ← 3계층 테스트 인프라 (pytest)
+│   ├── conftest.py                        (공유 픽스처 — project_root, tmp_project, SOT 모듈 로더)
+│   ├── unit/                              (단위 테스트 — SOT, 사이트 분배, 소스 생성, 셋업)
+│   ├── integration/                       (통합 테스트 — SOT 전체 라이프사이클)
+│   └── structural/                        (구조 테스트 — 에이전트 구조, 사이트 일관성, 플레이북 정합)
+├── pytest.ini                             ← pytest 설정
+└── translations/                          ← 번역 산출물 + 용어 사전
+    └── glossary.yaml                      (@translator 용어 사전 — 워크플로우 간 용어 일관성 유지)
 ```
 
 ## Context Preservation System
@@ -232,11 +264,47 @@ AgenticWorkflow/
 > **PreToolUse Safety Hook의 독립 실행 근거**: `block_destructive_commands.py`(안전)와 `block_test_file_edit.py`(TDD 보호)는 컨텍스트 보존과는 다른 도메인이다. exit code 2 보존이 필수이므로, `context_guard.py`를 거치지 않고 직접 실행한다. `block_test_file_edit.py`는 `.tdd-guard` 파일 존재 시에만 활성화된다 (`touch .tdd-guard`로 TDD 모드 시작, `rm .tdd-guard`로 해제).
 > **D-7 의도적 중복 인스턴스**: (1) `REQUIRED_SCRIPTS` — `setup_init.py` ↔ `setup_maintenance.py` (19개 스크립트 목록). (2) `predictive_debug_guard.py` 상수 — `RISK_THRESHOLD`/`MIN_SESSIONS` ↔ `_context_lib.py`의 `_RISK_SCORE_THRESHOLD`/`_RISK_MIN_SESSIONS`. (3) `ERROR_TAXONOMY` 타입명 — `_classify_error_patterns()` 내 12개 타입 ↔ `_RISK_WEIGHTS` 13개 키. (4) ULW 감지 패턴 — `_context_lib.py`의 `_gather_retry_history()` ↔ `validate_retry_budget.py`의 `_ULW_SNAPSHOT_RE` ↔ `restore_context.py`의 ULW 상태 문자열 검사 (모두 `"ULW 상태"` 기반). (5) 재시도 한도 상수 — `validate_retry_budget.py`의 `DEFAULT_MAX_RETRIES`/`ULW_MAX_RETRIES` ↔ `_context_lib.py`의 `_DEFAULT_MAX_RETRIES`/`_ULW_MAX_RETRIES` ↔ `restore_context.py`의 ULW+Autopilot 주입 텍스트. 각 D-7 인스턴스는 코드에 cross-reference 주석이 있으며, 한쪽 변경 시 반드시 대응 쪽도 동기화해야 한다.
 
+## 워크플로우 시작 트리거 (Workflow Start Triggers)
+
+> 사용자가 아래 패턴의 자연어 명령을 입력하면, **자동으로 `/start` 슬래시 커맨드와 동일한 시작 프로토콜을 실행**한다.
+> 명시적 `/start` 입력 없이도 워크플로우가 가동된다.
+
+### 인식 패턴
+
+| 트리거 패턴 (한국어) | 트리거 패턴 (영어) | 동작 |
+|---------------------|-------------------|------|
+| "시작하자", "시작", "시작해" | "start", "let's start", "begin" | `/start` 실행 |
+| "워크플로우 시작", "워크플로우를 시작하자" | "start the workflow", "run the workflow" | `/start` 실행 |
+| "크롤링 시작", "크롤링을 시작하자" | "start crawling", "begin crawling" | `/start` 실행 |
+| "스캐닝 시작", "조사를 시작하자" | "start scanning", "begin research" | `/start` 실행 |
+| "다음 단계", "다음", "진행하자", "계속" | "next step", "continue", "proceed" | `/start` 실행 (이미 진행 중인 워크플로우의 현재 단계에서 재개) |
+| "autopilot으로 시작", "자동 모드로 시작" | "start in autopilot", "auto mode" | `/start` 실행 + autopilot 활성화 |
+
+### 판별 규칙
+
+1. **워크플로우 존재 확인**: `prompt/workflow.md`와 `.claude/state.yaml`이 모두 존재해야 한다. 없으면 "워크플로우가 아직 없습니다. `/workflow-generator`로 먼저 생성하세요."
+2. **모호성 해소**: "시작"이 워크플로우 시작인지 다른 작업 시작인지 불분명할 때, `state.yaml`이 존재하면 워크플로우 시작으로 해석한다.
+3. **실행 흐름**: 트리거 인식 → `python3 scripts/workflow_starter.py --project-dir .` → JSON 파싱 → readiness 확인 → 실행 시작
+
+### 시작 프로토콜 요약
+
+```
+1. python3 scripts/workflow_starter.py --project-dir .
+2. readiness == "ready" 확인
+3. 시작 배너 출력 (Step N/20, Phase, Agent)
+4. python3 scripts/extract_orchestrator_step_guide.py --step N --project-dir . --include-universal
+5. workflow.md Step N의 Verification 기준 읽기
+6. Universal Step Protocol 순차 실행
+7. 완료 후: autopilot ON → 다음 단계 자동 진행 / OFF → 사용자 대기
+```
+
 ## 스킬 사용 판별
 
 | 사용자 요청 패턴 | 스킬 | 진입점 |
 |----------------|------|--------|
 | "워크플로우 만들어줘", "자동화 파이프라인 설계", "작업 흐름 정의" | `workflow-generator` | SKILL.md → 케이스 판별 |
+| "스킬 만들어줘", "create a skill", "새 스킬 생성" | `skill-creator` | SKILL.md → DNA 유전 포함 생성 |
+| "에이전트 만들어줘", "create an agent", "서브에이전트 생성" | `subagent-creator` | SKILL.md → frontmatter + DNA 주입 |
 | "논문 스타일로 써줘", "학술적 글쓰기", "논문 문장 다듬기" | `doctoral-writing` | SKILL.md → 맥락 파악 |
 
 ## 설계 원칙

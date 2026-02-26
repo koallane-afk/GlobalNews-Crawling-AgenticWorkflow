@@ -109,6 +109,9 @@ def main():
     # 8. Runtime log directories (conditional — only when SOT exists)
     results.extend(_check_runtime_dirs(project_dir))
 
+    # 9. Workflow output directories (conditional — only when SOT exists)
+    results.extend(_check_workflow_output_dirs(project_dir))
+
     # Write log file
     log_path = os.path.join(project_dir, ".claude", "hooks", "setup.init.log")
     _write_log(log_path, results)
@@ -282,6 +285,59 @@ def _check_runtime_dirs(project_dir):
     ]
 
     for dirname in runtime_dirs:
+        dirpath = os.path.join(project_dir, dirname)
+        if os.path.isdir(dirpath):
+            results.append(
+                _result(INFO, "PASS", f"{dirname}/", "directory exists")
+            )
+        else:
+            try:
+                os.makedirs(dirpath, exist_ok=True)
+                results.append(
+                    _result(INFO, "PASS", f"{dirname}/", "directory created")
+                )
+            except Exception as e:
+                results.append(
+                    _result(
+                        WARNING, "FAIL", f"{dirname}/",
+                        f"cannot create directory: {e}",
+                    )
+                )
+
+    return results
+
+
+def _check_workflow_output_dirs(project_dir):
+    """Check workflow output directories exist when SOT is present.
+
+    These directories receive agent outputs during workflow execution.
+    Without them, agents fail silently when trying to write outputs.
+
+    SOT Compliance: Checks SOT existence only (no content read).
+    Directories created are NOT SOT — they are output infrastructure.
+    """
+    SOT_FILENAMES = ("state.yaml", "state.yml", "state.json")
+    claude_dir = os.path.join(project_dir, ".claude")
+
+    sot_exists = any(
+        os.path.exists(os.path.join(claude_dir, fn))
+        for fn in SOT_FILENAMES
+    )
+    if not sot_exists:
+        return []
+
+    results = []
+    # Directories that workflow steps write their outputs to
+    workflow_dirs = [
+        "research",           # Steps 1-4 outputs
+        "planning",           # Steps 5-8 outputs
+        "planning/team-input",  # Team distribution inputs
+        "testing",            # Steps 16-17 outputs
+        "docs",               # Steps 18-20 outputs
+        "config",             # sources.yaml, pipeline.yaml
+    ]
+
+    for dirname in workflow_dirs:
         dirpath = os.path.join(project_dir, dirname)
         if os.path.isdir(dirpath):
             results.append(

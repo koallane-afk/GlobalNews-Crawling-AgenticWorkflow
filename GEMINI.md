@@ -63,6 +63,9 @@
 | Translation Protocol | 영어 산출물 → 한국어 번역. `@translator` 서브에이전트가 `glossary.yaml` 기반 용어 일관성 유지. P1 검증(`validate_translation.py` T1-T9 + `validate_verification.py` V1a-V1c)으로 번역·검증 품질 보장. Review PASS가 Translation의 전제. `AGENTS.md §5.2` 참조 |
 | Predictive Debugging (L-1) | 에러 이력 기반 위험 파일 사전 경고. `predictive_debug_guard.py`(PreToolUse 경고 전용) + `aggregate_risk_scores()`(SessionStart P1 집계) + `validate_risk_scores()`(RS1-RS6 검증). `risk-scores.json` 캐시. `_context_lib.py` + `CLAUDE.md` 참조 |
 | Abductive Diagnosis | 품질 게이트(Verification/pACS/Review) FAIL → 재시도 사이에 3단계 구조화된 진단 수행. Step A: P1 사전 증거 수집(`diagnose_context.py`), Step B: LLM 원인 분석(가설 ≥ 2개), Step C: P1 사후 검증(`validate_diagnosis.py` AD1-AD10). Fast-Path(FP1-FP3)로 결정론적 단축 가능. `diagnosis-logs/`에 기록. `AGENTS.md §5.6` 참조 |
+| Workflow Start Triggers | 자연어 명령("시작하자", "크롤링 시작" 등)으로 워크플로우 가동. `scripts/workflow_starter.py`가 SOT + `workflow.md`를 파싱하여 구조화된 JSON 스타트업 컨텍스트 생성. Gemini에서는 수동으로 스크립트 실행: `python3 scripts/workflow_starter.py --project-dir .` |
+| Orchestrator Playbook | `ORCHESTRATOR-PLAYBOOK.md` — Universal Step Protocol(12단계) + 단계별 실행 가이드. `scripts/extract_orchestrator_step_guide.py --step N`으로 특정 단계 가이드 추출. Gemini에서는 수동으로 해당 단계 섹션을 읽어 적용 |
+| Meta-Skills (skill-creator, subagent-creator) | 새 스킬·서브에이전트 생성을 표준화하는 메타 스킬. `.claude/skills/skill-creator/`, `.claude/skills/subagent-creator/`. Gemini에서는 해당 스킬 파일을 `@` import로 참조하여 동일 패턴 적용 |
 
 ## 컨텍스트 보존
 

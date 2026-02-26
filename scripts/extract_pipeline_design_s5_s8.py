@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Extract Stages 5-8 from pipeline design for signal detection team.
+
+Usage: python3 scripts/extract_pipeline_design_s5_s8.py --project-dir .
+
+Reads:
+  - planning/analysis-pipeline-design.md  (Step 7 output)
+
+Output:
+  - planning/team-input/pipeline-stages-5-8.md
+
+Extracts Stage 5 (Time Series), Stage 6 (Cross-Analysis),
+Stage 7 (Signal Classification), Stage 8 (Storage/Output),
+plus shared data contracts and schema references.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_TARGET_STAGES = {
+    5: ["stage 5", "time series", "temporal", "trend detection",
+        "time-series", "temporal analysis", "frequency"],
+    6: ["stage 6", "cross-analysis", "cross analysis", "correlation",
+        "comparative", "cross-source", "inter-source", "multi-source"],
+    7: ["stage 7", "signal classification", "signal detection",
+        "anomaly", "alert", "pattern recognition", "signal scoring"],
+    8: ["stage 8", "storage", "output", "persistence", "database",
+        "export", "reporting", "dashboard", "delivery"],
+}
+
+_SHARED_KEYWORDS = [
+    "data contract", "schema", "shared", "common", "interface",
+    "data model", "type definition", "protocol", "base class",
+]
+
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)", re.MULTILINE)
+
+
+# ---------------------------------------------------------------------------
+# Extraction helpers
+# ---------------------------------------------------------------------------
+
+def _find_section_by_keywords(
+    text: str,
+    keywords: list[str],
+    headings: list[re.Match],
+    *,
+    heading_level_max: int = 4,
+) -> list[str]:
+    """Return sections whose heading matches any keyword."""
+    results: list[str] = []
+    lower_keywords = [k.lower() for k in keywords]
+
+    for idx, match in enumerate(headings):
+        level = len(match.group(1))
+        title = match.group(2).strip()
+
+        if level > heading_level_max:
+            continue
+
+        if not any(kw in title.lower() for kw in lower_keywords):
+            continue
+
+        start = match.start()
+        end = len(text)
+        for subsequent in headings[idx + 1:]:
+            if len(subsequent.group(1)) <= level:
+                end = subsequent.start()
+                break
+
+        results.append(text[start:end].rstrip())
+
+    return results
+
+
+def _extract_all_stages(
+    text: str, headings: list[re.Match]
+) -> dict[int, list[str]]:
+    """Extract sections for stages 5-8."""
+    stage_sections: dict[int, list[str]] = {}
+
+    for stage_num, keywords in _TARGET_STAGES.items():
+        sections = _find_section_by_keywords(text, keywords, headings)
+        if sections:
+            stage_sections[stage_num] = sections
+
+    return stage_sections
+
+
+def _extract_shared_sections(
+    text: str, headings: list[re.Match]
+) -> list[str]:
+    """Extract shared data contracts and schema sections."""
+    return _find_section_by_keywords(text, _SHARED_KEYWORDS, headings)
+
+
+# ---------------------------------------------------------------------------
+# Main logic
+# ---------------------------------------------------------------------------
+
+def extract_pipeline_stages_5_8(project_dir: Path) -> dict:
+    """Extract Stages 5-8 and shared contracts from pipeline design.
+
+    Returns a dict with 'valid', 'output_path', and diagnostics.
+    """
+    source_path = project_dir / "planning" / "analysis-pipeline-design.md"
+    output_dir = project_dir / "planning" / "team-input"
+    output_path = output_dir / "pipeline-stages-5-8.md"
+
+    warnings: list[str] = []
+
+    # ------------------------------------------------------------------
+    # Read source file
+    # ------------------------------------------------------------------
+    if not source_path.is_file():
+        return {
+            "valid": False,
+            "errors": [f"Pipeline design not found: {source_path}"],
+            "output_path": str(output_path),
+            "stages_extracted": 0,
+        }
+
+    text = source_path.read_text(encoding="utf-8")
+    headings = list(_HEADING_RE.finditer(text))
+
+    # ------------------------------------------------------------------
+    # Extract stages
+    # ------------------------------------------------------------------
+    stage_sections = _extract_all_stages(text, headings)
+    shared_sections = _extract_shared_sections(text, headings)
+
+    # ------------------------------------------------------------------
+    # Assemble output document
+    # ------------------------------------------------------------------
+    parts: list[str] = []
+    parts.append("# Pipeline Stages 5-8 — Signal Detection Team Input")
+    parts.append("")
+    parts.append("> Auto-generated by `extract_pipeline_design_s5_s8.py`")
+    parts.append(f"> Source: `{source_path}`")
+    parts.append("")
+    parts.append("---")
+    parts.append("")
+
+    stage_labels = {
+        5: "Stage 5: Time Series Analysis",
+        6: "Stage 6: Cross-Source Analysis",
+        7: "Stage 7: Signal Classification",
+        8: "Stage 8: Storage & Output",
+    }
+
+    stages_found = 0
+    for stage_num in [5, 6, 7, 8]:
+        label = stage_labels[stage_num]
+        parts.append(f"## {label}")
+        parts.append("")
+
+        sections = stage_sections.get(stage_num, [])
+        if sections:
+            stages_found += 1
+            for section in sections:
+                parts.append(section)
+                parts.append("")
+        else:
+            parts.append(f"_No content found for {label} in source document._")
+            parts.append("")
+            warnings.append(f"No content found for {label}")
+
+    # Shared data contracts
+    parts.append("---")
+    parts.append("")
+    parts.append("## Shared Data Contracts & Schemas")
+    parts.append("")
+    if shared_sections:
+        for section in shared_sections:
+            parts.append(section)
+            parts.append("")
+    else:
+        parts.append("_No shared data contract sections found._")
+        parts.append("")
+        warnings.append("No shared data contract sections found")
+
+    output_text = "\n".join(parts)
+
+    # ------------------------------------------------------------------
+    # Write output
+    # ------------------------------------------------------------------
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(output_text, encoding="utf-8")
+
+    result = {
+        "valid": True,
+        "output_path": str(output_path),
+        "stages_extracted": stages_found,
+        "shared_sections": len(shared_sections),
+        "output_size_bytes": len(output_text.encode("utf-8")),
+        "warnings": warnings,
+    }
+
+    if stages_found == 0:
+        result["valid"] = False
+        result["errors"] = ["No stage sections extracted — source may have unexpected structure"]
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Extract Stages 5-8 from pipeline design for signal detection team."
+    )
+    parser.add_argument(
+        "--project-dir",
+        required=True,
+        help="Project root directory.",
+    )
+    args = parser.parse_args()
+
+    project_dir = Path(args.project_dir).resolve()
+    result = extract_pipeline_stages_5_8(project_dir)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    if not result["valid"]:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

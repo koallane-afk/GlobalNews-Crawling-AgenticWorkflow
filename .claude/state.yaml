@@ -1,0 +1,37 @@
+workflow:
+  name: GlobalNews Crawling & Analysis Auto-Build
+  current_step: 1
+  status: in_progress
+  total_steps: 20
+  parent_genome:
+    source: AgenticWorkflow
+    version: '2026-02-25'
+    inherited_dna:
+    - absolute-criteria
+    - sot-pattern
+    - 3-phase-structure
+    - 4-layer-qa
+    - safety-hooks
+    - adversarial-review
+    - decision-log
+    - context-preservation
+    - cross-step-traceability
+  autopilot:
+    enabled: false
+    auto_approved_steps: []
+  outputs: {}
+  pending_human_action:
+    step: null
+    options: []
+  verification:
+    last_verified_step: 0
+    retries: {}
+  pacs:
+    current_step_score: null
+    dimensions:
+      F: null
+      C: null
+      L: null
+    weak_dimension: null
+    pre_mortem_flag: null
+    history: {}

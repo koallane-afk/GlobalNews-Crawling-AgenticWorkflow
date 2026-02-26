@@ -681,6 +681,56 @@
 - **대안**: (1) 무한 재시도(경로 C) — 기각 (I-3 안전장치 해제, 무한 루프 위험). (2) 중간 상향(경로 A, 5/7) — 기각 (사용자가 경로 B 선택)
 - **관련 파일**: `validate_retry_budget.py`, `_context_lib.py`, `restore_context.py`, `setup_maintenance.py`, `CLAUDE.md`, `AGENTS.md`, `ARCHITECTURE.md`, Spoke 3개, `translator.md`, `fact-checker.md`, `maintenance.md`, `claude-code-patterns.md`, `state.yaml.example`
 
+### ADR-049: 워크플로우 시작 트리거 시스템 (Workflow Start Triggers)
+
+- **날짜**: 2026-02-25
+- **상태**: Accepted
+- **맥락**: 사용자가 "시작하자", "크롤링을 시작하자", "스캐닝을 시작하자" 등 자연어로 워크플로우 가동을 명령할 때, 이를 인식하여 `/start` 슬래시 커맨드로 라우팅하는 구조가 필요
+- **결정**: 3계층 시작 시스템 설계. (1) CLAUDE.md에 자연어 트리거 패턴 → `/start` 매핑 규칙 추가, (2) `.claude/commands/start.md` 슬래시 커맨드가 7단계 시작 프로토콜 정의, (3) `scripts/workflow_starter.py`가 SOT + `workflow.md`를 결정론적으로 파싱하여 구조화된 JSON 스타트업 컨텍스트 생성
+- **근거**: LLM의 자연어 인식 + Python 스크립트의 결정론적 상태 확인을 결합. "시작"이라는 모호한 명령을 정확한 실행 컨텍스트(current_step, phase, step_details, next_actions)로 변환
+- **대안**: (1) Python 스크립트 없이 LLM이 직접 SOT+workflow.md 파싱 — 기각 (P1 원칙 위반, 할루시네이션 위험). (2) 별도 키워드 없이 항상 `/start`만 사용 — 기각 (사용자 경험 저하)
+- **관련 파일**: `scripts/workflow_starter.py`, `.claude/commands/start.md`, `CLAUDE.md`
+
+### ADR-050: Orchestrator Playbook — 단계별 실행 가이드
+
+- **날짜**: 2026-02-25
+- **상태**: Accepted
+- **맥락**: `workflow.md`는 "무엇을 해야 하는가"를 정의하지만, Orchestrator가 각 단계를 "어떻게 실행하는가"에 대한 런타임 가이드가 부재. Universal Step Protocol을 모든 단계에 동일하게 적용하면서도 단계별 특수 사항을 안내하는 문서 필요
+- **결정**: `ORCHESTRATOR-PLAYBOOK.md`를 프로젝트 루트에 추가. Universal Step Protocol(12단계 실행 시퀀스) + SOT Command Cheat Sheet + 20개 단계별 실행 가이드(에이전트, 특수 고려사항, 의존성) 포함. `scripts/extract_orchestrator_step_guide.py`로 특정 단계의 가이드를 결정론적으로 추출
+- **근거**: 워크플로우 설계(workflow.md)와 실행 가이드(playbook)의 관심사 분리. LLM이 매 단계마다 전체 문서를 읽지 않고 필요한 가이드만 추출하여 컨텍스트 효율성 확보
+- **대안**: (1) workflow.md에 실행 가이드 포함 — 기각 (설계와 실행 관심사 혼재). (2) 각 단계별 별도 파일 — 기각 (20개 파일 관리 부담, 일관성 유지 어려움)
+- **관련 파일**: `ORCHESTRATOR-PLAYBOOK.md`, `scripts/extract_orchestrator_step_guide.py`
+
+### ADR-051: 메타 스킬 — skill-creator, subagent-creator
+
+- **날짜**: 2026-02-25
+- **상태**: Accepted
+- **맥락**: 워크플로우 구현(Phase 2) 과정에서 새로운 스킬과 서브에이전트를 반복적으로 생성해야 하는데, 매번 AGENTS.md와 스킬 개발 규칙을 수동으로 참조하는 것은 비효율적. 검증된 패턴을 재사용 가능한 형태로 캡슐화 필요
+- **결정**: 2개 메타 스킬 추가. (1) `skill-creator` — 절대 기준 포함, WHY/WHAT/HOW/VERIFY 체계, 절대 기준 충돌 시나리오 등 스킬 개발 규칙을 자동 적용하는 스킬 생성기. (2) `subagent-creator` — frontmatter 설계, 모델 선택 기준, 도구 최소화 원칙 등을 자동 적용하는 서브에이전트 생성기
+- **근거**: "도구를 만드는 도구" 패턴. DNA 유전의 자식 시스템에서도 스킬/에이전트를 동일 품질 기준으로 생성할 수 있어야 함. 메타 스킬은 부모 게놈의 발현을 표준화하는 역할
+- **대안**: (1) SKILL.md 템플릿만 제공 — 기각 (규칙 적용의 일관성 보장 불가). (2) 스킬 생성을 Orchestrator에 위임 — 기각 (P2 원칙: 전문 에이전트 위임이 품질 향상)
+- **관련 파일**: `.claude/skills/skill-creator/`, `.claude/skills/subagent-creator/`
+
+### ADR-052: Orchestrator Scripts — 22개 결정론적 실행 스크립트
+
+- **날짜**: 2026-02-25
+- **상태**: Accepted
+- **맥락**: GlobalNews Crawling 워크플로우의 Phase 2 구현에서, SOT 관리·검증·전처리·후처리·품질 게이트 등을 LLM에 위임하면 할루시네이션과 비결정론적 동작 위험. P1 원칙에 따라 결정론적 Python 스크립트로 분리 필요
+- **결정**: `scripts/` 디렉터리에 22개 Python 스크립트 구축. 카테고리: (1) SOT 관리 — `sot_manager.py`(fcntl 파일 잠금 기반 atomic SOT 조작), (2) 검증 — `validate_step_transition.py`, `run_quality_gates.py`, (3) 전처리 — `distribute_sites.py`(44개 사이트 → 팀 배분), `generate_sources_yaml.py`, (4) 후처리 — `merge_team_outputs.py`, `merge_analysis_sections.py`, (5) 추출 — `extract_orchestrator_step_guide.py`, `extract_site_list.py`, (6) 분석 — `calculate_crawl_stats.py`, `validate_crawl_results.py`, (7) 워크플로우 시작 — `workflow_starter.py`
+- **근거**: P1 원칙의 대규모 적용. AI가 판단·분석·창의적 생성에 집중하고, 반복적·결정론적 작업(파일 파싱, 통계 계산, 데이터 변환, 유효성 검증)은 Python이 수행. `sot_manager.py`의 `fcntl.flock` 기반 파일 잠금은 절대 기준 2(SOT 무결성)의 코드 수준 구현
+- **대안**: (1) LLM이 직접 SOT 조작 — 기각 (비결정론적, 할루시네이션 위험). (2) 범용 스크립트 1개 — 기각 (단일 책임 원칙 위반, 유지보수 어려움)
+- **관련 파일**: `scripts/` 디렉터리 전체 (22개 파일)
+
+### ADR-053: 3계층 테스트 인프라
+
+- **날짜**: 2026-02-25
+- **상태**: Accepted
+- **맥락**: 22개 오케스트레이터 스크립트와 35개 에이전트 정의의 구조적 무결성을 보장하려면 자동화된 테스트가 필요. Hook 기반 P1 검증은 런타임 시점이므로, 개발 시점의 사전 검증 계층이 추가로 필요
+- **결정**: 3계층 테스트 프레임워크 구축. (1) **Unit** — `test_sot_manager.py`(SOT CRUD 연산), `test_distribute_sites.py`(사이트 배분 알고리즘), `test_generate_sources.py`(YAML 생성), `test_setup_init.py`(인프라 건강 검증). (2) **Integration** — `test_sot_lifecycle.py`(SOT 전체 라이프사이클 검증). (3) **Structural** — `test_agent_structure.py`(35개 에이전트 frontmatter 유효성), `test_site_consistency.py`(44개 사이트 데이터 일관성), `test_playbook_structure.py`(20개 단계 가이드 완전성). `pytest.ini`로 마커 분류(`unit`, `integration`, `structural`)
+- **근거**: ADR-052의 22개 스크립트 품질 보장. Structural 테스트는 에이전트·사이트·플레이북의 cross-cutting 일관성을 자동 검증하여, 수동 전수조사의 비용을 대폭 절감. CAP-3(목표 기반 실행) 적용 — 테스트가 "성공 기준"을 코드로 표현
+- **대안**: (1) 테스트 없이 수동 검증만 — 기각 (22개 스크립트 × 반복 검증 비용). (2) E2E 테스트만 — 기각 (실패 시 원인 특정 어려움). (3) Unit만 — 기각 (cross-cutting 일관성 검증 불가)
+- **관련 파일**: `tests/` 디렉터리 (8개 파일), `pytest.ini`
+
 ---
 
 ## 부록: 커밋 히스토리 기반 타임라인
@@ -720,6 +770,11 @@
 | 2026-02-23 | (pending) | ADR-046: G3 — 도메인 지식 구조 (Domain Knowledge Structure) |
 | 2026-02-23 | (pending) | ADR-047: Abductive Diagnosis Layer — 품질 게이트 FAIL 시 구조화된 진단 |
 | 2026-02-23 | accepted | ADR-048: 전수조사 기반 시스템 일관성 강화 — 재시도 한도 10/15 + P1 doc-code sync + D-7 #5 |
+| 2026-02-25 | accepted | ADR-049: 워크플로우 시작 트리거 시스템 — 자연어 → /start → workflow_starter.py 3계층 |
+| 2026-02-25 | accepted | ADR-050: Orchestrator Playbook — Universal Step Protocol + 20개 단계별 실행 가이드 |
+| 2026-02-25 | accepted | ADR-051: 메타 스킬 — skill-creator + subagent-creator (도구를 만드는 도구) |
+| 2026-02-25 | accepted | ADR-052: Orchestrator Scripts — 22개 결정론적 Python 실행 스크립트 |
+| 2026-02-25 | accepted | ADR-053: 3계층 테스트 인프라 — unit + integration + structural (8개 테스트 파일) |
 
 ---
 

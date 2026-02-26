@@ -278,7 +278,8 @@ AgenticWorkflow/
 │   │   └── fact-checker.md   (Adversarial Review — 외부 사실 검증, 웹 접근)
 │   ├── commands/              ← Slash Commands
 │   │   ├── install.md         (Setup Init 검증 결과 분석 — /install)
-│   │   └── maintenance.md     (Setup Maintenance 건강 검진 — /maintenance)
+│   │   ├── maintenance.md     (Setup Maintenance 건강 검진 — /maintenance)
+│   │   └── start.md           (워크플로우 시작 프로토콜 — /start)
 │   ├── hooks/scripts/         ← Context Preservation System + Setup Hooks + Safety Hooks
 │   │   ├── context_guard.py   (Hook 통합 디스패처 — 4개 이벤트의 단일 진입점)
 │   │   ├── _context_lib.py    (공유 라이브러리 — 파싱, 생성, SOT 캡처, Smart Throttling, Autopilot 상태 읽기·검증, ULW 감지·준수 검증, 절삭 상수 중앙화, sot_paths() 경로 통합, 다단계 전환 감지, 결정 품질 태그 정렬, Error Taxonomy 12패턴+Resolution 매칭, Success Patterns(Edit/Write→Bash 성공 시퀀스 추출), IMMORTAL-aware 압축+감사 추적, E5 Guard 중앙화(is_rich_snapshot+update_latest_with_guard), Knowledge Archive 통합(archive_and_index_session — 부분 실패 격리), 경로 태그 추출(extract_path_tags), KI 스키마 검증(_validate_session_facts — RLM 필수 키 보장), SOT 스키마 검증(validate_sot_schema — 워크플로우 state.yaml 구조 무결성 8항목 검증: S1-S6 기본 + S7 pacs 5필드(dimensions, current_step_score, weak_dimension, history, pre_mortem_flag) + S8 active_team 5필드(name, status(partial|all_completed), tasks_completed, tasks_pending, completed_summaries)), Adversarial Review P1 검증(validate_review_output R1-R5, parse_review_verdict, calculate_pacs_delta, validate_review_sequence), Translation P1 검증(validate_translation_output T1-T7, check_glossary_freshness T8, verify_pacs_arithmetic T9 범용, validate_verification_log V1a-V1c), Predictive Debugging P1(aggregate_risk_scores+validate_risk_scores RS1-RS6+_RISK_WEIGHTS 13개 가중치+_RECENCY_DECAY_DAYS 감쇠), pACS P1 검증(validate_pacs_output PA1-PA6 — pACS 로그 구조 무결성: 파일 존재·최소 크기·차원 점수·Pre-mortem·min() 산술·Color Zone), L0 Anti-Skip Guard(validate_step_output L0a-L0c — 산출물 파일 존재+최소 크기+비공백), Team Summaries KI 아카이브(_extract_team_summaries — SOT active_team.completed_summaries → KI 보존), Abductive Diagnosis Layer(diagnose_failure_context 사전 증거 수집 + validate_diagnosis_log AD1-AD10 사후 검증 + _extract_diagnosis_patterns KA 아카이빙 + Fast-Path FP1-FP3 + 가설 우선순위 H1/H2/H3), 모듈 레벨 regex 컴파일(9개+8개+8개+4개+5개 패턴 — 프로세스당 1회))
@@ -295,12 +296,19 @@ AgenticWorkflow/
 │   │   ├── validate_review.py (Adversarial Review P1 검증 — 독립 실행 스크립트, JSON 출력)
 │   │   ├── validate_translation.py (Translation P1 검증 — T1-T9 + glossary 검증, JSON 출력)
 │   │   ├── validate_verification.py (Verification Log P1 검증 — V1a-V1c 구조적 무결성, JSON 출력)
-│   │   └── validate_retry_budget.py (Retry Budget P1 검증 — RB1-RB3 재시도 예산 판정(ULW-aware), JSON 출력)
+│   │   ├── validate_retry_budget.py (Retry Budget P1 검증 — RB1-RB3 재시도 예산 판정(ULW-aware), JSON 출력)
+│   │   ├── validate_workflow.py     (Workflow.md DNA Inheritance P1 검증 — W1-W8 구조적 무결성, JSON 출력)
+│   │   ├── validate_traceability.py (Cross-Step Traceability P1 검증 — CT1-CT5 교차 단계 추적성, JSON 출력)
+│   │   ├── validate_domain_knowledge.py (Domain Knowledge Structure P1 검증 — DK1-DK7 도메인 지식, JSON 출력)
+│   │   ├── diagnose_context.py      (Abductive Diagnosis 사전 증거 수집 — 독립 실행 스크립트, JSON 출력)
+│   │   └── validate_diagnosis.py    (Abductive Diagnosis P1 사후 검증 — AD1-AD10 구조적 무결성, JSON 출력)
 │   ├── context-snapshots/     ← 런타임 스냅샷 (gitignored)
 │   └── skills/
 │       ├── workflow-generator/   ← 워크플로우 설계·생성
 │       │   ├── SKILL.md          (스킬 정의 + 절대 기준)
 │       │   └── references/       (구현 패턴, 템플릿, 문서 분석 가이드)
+│       ├── skill-creator/        ← 스킬 생성 메타 스킬
+│       ├── subagent-creator/     ← 서브에이전트 생성 메타 스킬
 │       └── doctoral-writing/     ← 박사급 학술 글쓰기
 │           ├── SKILL.md          (스킬 정의 + 절대 기준)
 │           └── references/       (체크리스트, 빈출 오류, 수정 사례, 분야별 가이드)
@@ -1149,6 +1157,20 @@ LLM 진단을 건너뛰는 결정론적 단축 경로:
 - **트리거**: "논문 스타일로 써줘", "학술적 글쓰기", "논문 문장 다듬기"
 - **진입점**: `.claude/skills/doctoral-writing/SKILL.md`
 - **핵심 원칙**: 명료성, 간결성, 학술적 엄밀성, 논리적 흐름
+
+### skill-creator (메타 스킬)
+
+새로운 스킬을 생성하는 메타 스킬. 절대 기준 포함, WHY/WHAT/HOW/VERIFY 체계, 충돌 시나리오 명시 등 스킬 개발 규칙(§7)을 자동 적용한다.
+
+- **트리거**: "새 스킬 만들어줘", "스킬 생성"
+- **진입점**: `.claude/skills/skill-creator/`
+
+### subagent-creator (메타 스킬)
+
+새로운 서브에이전트를 생성하는 메타 스킬. Frontmatter 설계, 모델 선택 기준, 도구 최소화 원칙을 자동 적용한다.
+
+- **트리거**: "에이전트 만들어줘", "서브에이전트 생성"
+- **진입점**: `.claude/skills/subagent-creator/`
 
 ---
 

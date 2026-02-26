@@ -675,7 +675,8 @@ def validate_sot_schema(ap_state):
     # S5: workflow_status — must be recognized value
     status = ap_state.get("workflow_status", "")
     if status:
-        valid_statuses = {"running", "completed", "error", "paused"}
+        # D-7 intentional duplication — must match sot_manager.py:VALID_STATUSES
+        valid_statuses = {"running", "completed", "error", "paused", "in_progress", "failed"}
         if status not in valid_statuses:
             warnings.append(
                 f"SOT schema: unrecognized workflow_status '{status}'"

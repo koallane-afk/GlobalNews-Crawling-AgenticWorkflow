@@ -150,6 +150,60 @@ Orchestrator (품질 조율 + 흐름 관리)
 
 ---
 
+## 4-1. 워크플로우 시작하기 (`/start`)
+
+워크플로우가 설계·구현된 프로젝트(Phase 2 완료)에서 실행을 시작할 때 사용합니다.
+
+### 자연어 트리거
+
+다음과 같은 자연어 명령이 자동으로 `/start` 슬래시 커맨드로 라우팅됩니다:
+
+| 사용자 명령 (예시) | 동작 |
+|------------------|------|
+| "시작하자", "시작" | `/start` 실행 |
+| "워크플로우를 시작하자" | `/start` 실행 |
+| "크롤링을 시작하자", "스캐닝을 시작하자" | `/start` 실행 |
+| "조사를 시작하자", "분석을 시작하자" | `/start` 실행 |
+| "Let's start", "Begin the workflow" | `/start` 실행 |
+| "autopilot으로 시작" | `/start` + Autopilot 모드 활성화 |
+
+### 동작 흐름
+
+```
+사용자: "시작하자"
+  ↓
+1. workflow_starter.py 실행 → JSON 스타트업 컨텍스트
+  ↓
+2. readiness 확인 (ready / blocked / completed)
+  ↓
+3. 시작 배너 표시 (현재 단계, 에이전트, 산출물 경로)
+  ↓
+4. Playbook에서 현재 단계 가이드 추출
+  ↓
+5. Universal Step Protocol 실행
+```
+
+### Autopilot 모드로 시작
+
+```
+"autopilot으로 시작해줘"
+"전자동으로 실행해줘"
+```
+
+Autopilot + 시작 키워드가 함께 있으면, `--autopilot` 플래그와 SOT `autopilot.enabled: true` 설정이 자동 적용됩니다.
+
+### 차단 상태 대응
+
+`readiness: blocked`일 때 표시되는 차단 사유와 대응:
+
+| 차단 사유 | 대응 |
+|---------|------|
+| SOT 파일 없음 | `python3 scripts/sot_manager.py --init --workflow-name "..." --total-steps 20 --project-dir .` |
+| 필수 스크립트 누락 | `/install` 실행 또는 수동 생성 |
+| ORCHESTRATOR-PLAYBOOK.md 없음 | Phase 2에서 Playbook 생성 필요 |
+
+---
+
 ## 5. Phase 1: 워크플로우 설계
 
 ### 5.1 워크플로우 생성 요청
@@ -512,6 +566,33 @@ Team Lead ─┬→ @researcher  [Hook: 출처 검증]
 > **파일 간 역할 분담**: 동일 주제(예: 피동태 남용)가 여러 파일에 등장하지만, 이는 중복이 아닌 역할 분담입니다.
 > SKILL.md(WHY) → common-issues.md(WHAT) → korean-quick-reference.md / before-after-examples.md(HOW) → clarity-checklist.md(VERIFY)
 
+### 8.3 skill-creator (메타 스킬)
+
+새로운 스킬을 생성하는 "도구를 만드는 도구"입니다. 스킬 개발 규칙(§7 of AGENTS.md)을 자동으로 적용합니다.
+
+**트리거 키워드:** 새 스킬 만들어줘, 스킬 생성
+
+**진입점:** `.claude/skills/skill-creator/`
+
+**자동 적용 규칙:**
+- 모든 절대 기준을 해당 도메인에 맞게 맥락화하여 포함
+- WHY/WHAT/HOW/VERIFY 파일 역할 분담 구조 생성
+- 절대 기준 간 충돌 시나리오 구체적 명시
+
+### 8.4 subagent-creator (메타 스킬)
+
+새로운 서브에이전트를 생성하는 메타 스킬입니다. Sub-agent frontmatter 설계와 모델 선택 기준을 자동으로 적용합니다.
+
+**트리거 키워드:** 에이전트 만들어줘, 서브에이전트 생성
+
+**진입점:** `.claude/skills/subagent-creator/`
+
+**자동 적용 규칙:**
+- Frontmatter 필수 필드 (name, description, model, tools, maxTurns 등)
+- 모델 선택 기준 (opus/sonnet/haiku — 품질 기반 판단)
+- 도구 최소화 원칙 (필요한 도구만 할당)
+- 단일 책임 원칙 (에이전트당 하나의 역할)
+
 ---
 
 ## 9. 프롬프트 자료
@@ -868,6 +949,11 @@ outputs:
 - [ ] Error Handling 설정 (재시도, 롤백, 에스컬레이션 규칙)
 - [ ] Translation 필드 설정 (각 단계별 `@translator` 또는 `none`)
 - [ ] `translations/glossary.yaml` 초기화 (번역 대상 단계가 있는 경우)
+
+### Phase 2: 실행 준비
+
+- [ ] Orchestrator Playbook 생성 (`ORCHESTRATOR-PLAYBOOK.md` — Universal Step Protocol + 단계별 가이드)
+- [ ] `/start` 명령으로 워크플로우 시작 테스트
 
 ### 검증
 

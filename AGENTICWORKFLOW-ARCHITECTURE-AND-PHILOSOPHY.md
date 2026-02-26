@@ -239,10 +239,12 @@ graph TB
         subgraph "Skills"
             WG["workflow-generator<br/>SKILL.md + 6 refs"]
             DW["doctoral-writing<br/>SKILL.md + 5 refs"]
+            SC_SK["skill-creator<br/>(메타 스킬)"]
+            SA_SK["subagent-creator<br/>(메타 스킬)"]
         end
 
         subgraph "Context Preservation + Safety"
-            CPS["hooks/scripts/<br/>19개 Python 스크립트 + 1 라이브러리 + Setup 2개<br/>(Context Preservation 6 + Safety 3 + P1 Validation 10 + Setup 2<br/>+ Abductive Diagnosis Layer)"]
+            CPS["hooks/scripts/<br/>22개 Python 스크립트 + 1 라이브러리 + Setup 2개<br/>(Context Preservation 6 + Safety 3 + P1 Validation 13 + Setup 2<br/>+ Abductive Diagnosis Layer)"]
             CSS["context-snapshots/<br/>런타임 스냅샷"]
         end
 
@@ -1348,6 +1350,15 @@ references/ (WHAT/HOW/WHERE/VERIFY)
 | `korean-quick-reference.md` | **HOW (Korean)** — 한국어 논문 패턴 라이브러리 | 한국어 작성 시 |
 | `discipline-guides.md` | **WHERE** — 인문/사회/자연과학별 관례 | 분야별 질문 시 |
 | `clarity-checklist.md` | **VERIFY** — 체계적 명료성·간결성·엄밀성 평가 | 수정 후 검증 |
+
+**메타 스킬 (skill-creator, subagent-creator):**
+
+| 스킬 | 역할 | 적용 패턴 |
+|------|------|----------|
+| `skill-creator` | 새 스킬 생성 시 절대 기준 포함, WHY/WHAT/HOW/VERIFY 체계, 충돌 시나리오 명시를 자동 적용 | §7 스킬 개발 규칙의 코드화 |
+| `subagent-creator` | 새 에이전트 생성 시 frontmatter 설계, 모델 선택 기준, 도구 최소화 원칙을 자동 적용 | §4.2 Sub-agent 설계 원칙의 코드화 |
+
+메타 스킬은 "도구를 만드는 도구"이다. DNA 유전(§1.4)에서 자식 시스템이 자신의 에이전트·스킬을 생성할 때, 부모 게놈의 품질 기준이 일관되게 적용되도록 보장한다.
 
 ### 7.3 의도적 중복의 원칙
 
