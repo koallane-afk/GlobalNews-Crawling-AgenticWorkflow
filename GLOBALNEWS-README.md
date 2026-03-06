@@ -157,7 +157,9 @@ GlobalNews-Crawling-AgenticWorkflow/
 │   │   ├── pipeline.py          (크롤링 오케스트레이터)
 │   │   ├── network_guard.py     (5-retry HTTP 클라이언트)
 │   │   ├── url_discovery.py     (3-Tier: RSS → Sitemap → DOM)
-│   │   ├── article_extractor.py (Fundus → Trafilatura → CSS)
+│   │   ├── article_extractor.py (Fundus → Trafilatura → CSS + 페이월 감지)
+│   │   ├── browser_renderer.py  (서브프로세스 Patchright/Playwright 렌더링)
+│   │   ├── adaptive_extractor.py (4-stage CSS 적응형 추출)
 │   │   ├── dedup.py             (3-Level: URL → Title → SimHash)
 │   │   ├── anti_block.py        (6-Tier 에스컬레이션)
 │   │   ├── retry_manager.py     (4-Level 재시도, 최대 90회)
@@ -223,9 +225,11 @@ GlobalNews-Crawling-AgenticWorkflow/
 
 ## 핵심 차별화 요소
 
-### D1 — Dynamic-First 크롤링
+### D1 — Dynamic-First 크롤링 + 페이월 바이패스
 
-4단계 크롤링 전략: 정적 HTML → DOM 탐색 → 동적 렌더링(Playwright) → 에지 케이스(Patchright). 각 사이트별 맞춤 어댑터로 44개 사이트를 개별 최적화.
+5단계 크롤링 전략: 정적 HTML → DOM 탐색 → 동적 렌더링(Playwright/Patchright) → 적응형 CSS 추출(AdaptiveExtractor) → Title-only fallback. 각 사이트별 맞춤 어댑터로 44개 사이트를 개별 최적화.
+
+**하드 페이월 사이트** (FT, NYTimes, WSJ, Bloomberg, Le Monde): `BrowserRenderer`가 서브프로세스에서 Patchright를 실행하여 쿠키 없는 "첫 방문" 경험으로 기사 전문 추출. 실패 시 `AdaptiveExtractor`가 4-stage CSS 선택자 전략으로 본문 추출. `is_paywall_body()`가 영어+프랑스어 14개 강력 패턴 + 12개 약한 패턴으로 페이월 잔존 여부를 결정론적으로 판별.
 
 ### D2 — Never Give Up (4-Level 재시도)
 
@@ -329,7 +333,7 @@ pytest -m "not slow"     # 느린 NLP 모델 테스트 제외
 | Safety Hooks | 위험 명령 차단(exit 2) + 시크릿 출력 감지(경고) + TDD 보호 + 예측적 디버깅 |
 | Context Preservation | 스냅샷 + Knowledge Archive + RLM 복원 + Learned Patterns 표면화 + Importance-Based Retention + Phase-Aware Compact |
 
-**도메인 고유 변이**: 4-Level 재시도 (90회, Circuit Breaker 무진전 감지 포함), 44-site Adapter Pattern, 5-Layer Signal Hierarchy, Date-Partitioned Storage, Conductor Pattern, HQ Gates (4종 Human-step 품질 검증), Autopilot Mode
+**도메인 고유 변이**: 4-Level 재시도 (90회, Circuit Breaker 무진전 감지 포함), 44-site Adapter Pattern, 5-Layer Signal Hierarchy, Date-Partitioned Storage, Conductor Pattern, HQ Gates (4종 Human-step 품질 검증), Autopilot Mode, Paywall Bypass System (BrowserRenderer + AdaptiveExtractor + is_paywall_body 영어/프랑스어 26패턴)
 
 ---
 

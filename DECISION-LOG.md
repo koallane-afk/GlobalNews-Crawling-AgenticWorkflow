@@ -792,6 +792,64 @@
 | 2026-02-25 | accepted | ADR-051: 메타 스킬 — skill-creator + subagent-creator (도구를 만드는 도구) |
 | 2026-02-25 | accepted | ADR-052: Orchestrator Scripts — 22개 결정론적 Python 실행 스크립트 |
 | 2026-02-25 | accepted | ADR-053: 3계층 테스트 인프라 — unit + integration + structural (8개 테스트 파일) |
+| 2026-03-06 | accepted | ADR-054: BrowserRenderer — 서브프로세스 기반 헤드리스 브라우저 렌더링 |
+| 2026-03-06 | accepted | ADR-055: AdaptiveExtractor — exec() 제거 후 CSS 선택자 전용 적응형 추출 |
+| 2026-03-06 | accepted | ADR-056: is_paywall_body — Strong/Weak 2단계 패턴 분류 페이월 감지 |
+| 2026-03-06 | accepted | ADR-057: 사이트별 렌더링 실패 카운터 — 3회 연속 실패 시 early bail-out |
+
+---
+
+## 8. 크롤링 엔진 강화 (Paywall Bypass)
+
+### ADR-054: BrowserRenderer — 서브프로세스 기반 헤드리스 브라우저 렌더링
+
+- **날짜**: 2026-03-06
+- **상태**: Accepted
+- **맥락**: 하드 페이월 사이트(FT, NYTimes, WSJ, Bloomberg, Le Monde)에서 기사 본문 추출이 불가능했다. Wayback Machine은 아카이브된 콘텐츠도 페이월 상태를 유지하여 비효과적임이 Phase 0 검증에서 확인되었다.
+- **결정**: Patchright(또는 Playwright)를 서브프로세스에서 실행하는 `BrowserRenderer` 클래스를 구현한다. 각 렌더링마다 쿠키 없는 fresh browser context를 사용하여 메터드 페이월의 "첫 방문" 경험을 활용한다.
+- **근거**:
+  - **서브프로세스 격리**: 메인 파이프라인은 동기(httpx), Patchright는 비동기. 이벤트 루프 충돌 방지 + 프로세스 수준 장애 격리.
+  - **Fresh context**: 쿠키/세션 없이 매번 새 브라우저 컨텍스트 → 메터드 페이월 우회.
+  - **Hard timeout**: `subprocess.run(timeout=45s)` — 브라우저 hang 시 강제 kill 보장.
+  - **Patchright 우선**: C++ 수준 자동화 패치로 봇 탐지 불가. Playwright로 자동 fallback.
+- **대안**:
+  - Wayback Machine CDX API → 기각 (하드 페이월 사이트에 비효과적 — Phase 0 검증)
+  - 메인 프로세스에서 asyncio.run() → 기각 (동기 파이프라인과 이벤트 루프 충돌)
+  - 프록시 서비스 → 기각 (C1 제약: API 비용 $0)
+
+### ADR-055: AdaptiveExtractor — exec() 제거 후 CSS 선택자 전용 적응형 추출
+
+- **날짜**: 2026-03-06
+- **상태**: Accepted
+- **맥락**: 브라우저 렌더링된 HTML에서 표준 추출 체인(Fundus/Trafilatura/CSS)이 실패하는 경우, 적응형 추출이 필요했다. 초기 설계는 `exec()` 기반 동적 코드 실행을 포함했으나, P1-3 성찰에서 보안 위험이 식별되었다.
+- **결정**: `exec()`/`eval()`을 완전 제거하고, BeautifulSoup CSS 선택자만으로 4-stage fallback 추출을 구현한다. 성공한 선택자는 source_id별로 캐시하여 후속 기사에 재사용한다.
+- **근거**:
+  - **보안**: exec()는 코드 인젝션 벡터. AST 검증으로도 완전한 안전성 보장 불가.
+  - **결정론적**: CSS 선택자는 입력(HTML) → 출력(텍스트) 매핑이 결정론적.
+  - **충분성**: 4-stage fallback(캐시 → 사이트별 → 범용 → 휴리스틱)으로 대부분의 사이트 커버 가능.
+- **대안**: exec() + AST 검증 샌드박스 → 기각 (보안 위험 > 유연성 이점)
+
+### ADR-056: is_paywall_body — Strong/Weak 2단계 패턴 분류 페이월 감지
+
+- **날짜**: 2026-03-06
+- **상태**: Accepted
+- **맥락**: 브라우저 렌더링 후에도 페이월이 남아있는지 판별해야 한다. 초기 설계는 패턴 매칭 비율(ratio) 기반이었으나, 실제 데이터에서 비율이 항상 임계값 이하로 나와 무용지물이었다.
+- **결정**: 패턴을 Strong(14개: 명령형·독자 지시)과 Weak(12개: 사실적·모호)로 2단계 분류하고, 카운트 기반 판정 로직을 사용한다: `strong ≥ 2` → 확정, `strong ≥ 1 AND len < 2000` → 짧은 본문 + 강력 지표 = 페이월.
+- **근거**:
+  - **Ratio 방식 실패**: FT 페이월 텍스트에서 7개 매칭, ratio=0.34 — 0.4 임계값 미달.
+  - **Strong/Weak 분리**: "subscribe to unlock"(강력)과 "to continue reading"(모호)은 신호 강도가 다르다. 모호한 패턴은 단독으로 페이월 판정에 사용할 수 없다.
+  - **다국어**: 프랑스어 패턴 6개(Strong) + 3개(Weak) 추가로 Le Monde 지원.
+  - **False positive 방지**: "to continue reading", "keep reading.*free", "want to read more"를 Strong에서 Weak으로 이동 — 정상 기사에서도 등장하는 표현.
+- **대안**: Ratio 기반 (패턴 수 / 총 문장 수) → 기각 (실제 데이터에서 항상 임계값 이하)
+
+### ADR-057: 사이트별 렌더링 실패 카운터 — 3회 연속 실패 시 early bail-out
+
+- **날짜**: 2026-03-06
+- **상태**: Accepted
+- **맥락**: BrowserRenderer가 특정 사이트에서 반복 실패(Chromium 미설치, 사이트 차단 등) 시, 매 기사마다 45초 타임아웃을 기다리면 파이프라인 전체가 지연된다.
+- **결정**: `_failure_counts: dict[str, int]`로 source_id별 연속 실패 횟수를 추적하고, `_MAX_CONSECUTIVE_FAILURES=3` 도달 시 해당 사이트의 후속 렌더링을 건너뛴다. 성공 시 카운터를 0으로 리셋한다.
+- **근거**: 3회 연속 실패는 일시적 장애가 아닌 구조적 문제를 시사한다. 나머지 사이트의 크롤링을 지연시키지 않기 위해 early bail-out이 필요하다.
+- **대안**: 전역 실패 카운터 → 기각 (한 사이트의 실패가 다른 사이트 렌더링을 차단)
 
 ---
 

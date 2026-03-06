@@ -276,6 +276,7 @@ def cmd_init(project_dir, workflow_name, total_steps):
             "autopilot": {
                 "enabled": False,
                 "auto_approved_steps": [],
+                "auto_approved_details": {},
             },
             "pending_human_action": {"step": None, "options": []},
             "verification": {"last_verified_step": 0, "retries": {}},
@@ -570,6 +571,17 @@ def cmd_set_autopilot(project_dir, enabled_str):
             wf["autopilot"]["enabled"] = enabled
             _write_sot_atomic(sot, data)
 
+            # SM-AP2: Generate activation Decision Log on first enable (best-effort)
+            if enabled and not old_val:
+                _generate_activation_log(project_dir, wf)
+                # SM-AP3: Reset stall tracker to prevent false positives on re-activation
+                tracker_path = os.path.join(project_dir, "autopilot-logs", ".progress-tracker")
+                try:
+                    if os.path.exists(tracker_path):
+                        os.remove(tracker_path)
+                except Exception:
+                    pass  # Non-blocking
+
             return {
                 "valid": True,
                 "action": "autopilot_set",
@@ -578,6 +590,41 @@ def cmd_set_autopilot(project_dir, enabled_str):
             }
     except Exception as e:
         return {"valid": False, "error": str(e)}
+
+
+def _generate_activation_log(project_dir, wf):
+    """Generate autopilot-logs/activation-decision.md on first activation (best-effort).
+
+    P1 Compliance: Deterministic file write.
+    Non-blocking: Swallows all exceptions.
+    """
+    import datetime
+    logs_dir = os.path.join(project_dir, "autopilot-logs")
+    log_path = os.path.join(logs_dir, "activation-decision.md")
+    if os.path.exists(log_path):
+        return  # Already exists — don't overwrite
+    try:
+        os.makedirs(logs_dir, exist_ok=True)
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        workflow_name = wf.get("name", "N/A")
+        current_step = wf.get("current_step", "?")
+        total_steps = wf.get("total_steps", "?")
+        content = (
+            f"# Autopilot Activation Decision Log\n\n"
+            f"- **Activation Time**: {now}\n"
+            f"- **Workflow**: {workflow_name}\n"
+            f"- **Current Step at Activation**: Step {current_step} / {total_steps}\n"
+            f"- **Decision**: Enable autopilot mode for automated (human) step approval\n"
+            f"- **Rationale**: User explicitly requested autopilot/auto mode. "
+            f"All (human) steps will be auto-approved with quality-maximizing defaults "
+            f"per Absolute Criterion 1. Hook exit code 2 blocking remains enforced.\n"
+            f"- **Constraints**: (hook) exit code 2 still blocks. "
+            f"Quality gates (L0/L1/L1.5/L2) are not bypassed.\n"
+        )
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception:
+        pass  # Non-blocking
 
 
 def cmd_add_auto_approved(project_dir, step_num):
@@ -625,6 +672,18 @@ def cmd_add_auto_approved(project_dir, step_num):
             aas.append(step_num)
             aas.sort()
             ap["auto_approved_steps"] = aas
+
+            # SM-AA5: Record approval details for audit trail
+            import datetime
+            details = ap.get("auto_approved_details", {})
+            if not isinstance(details, dict):
+                details = {}
+            details[str(step_num)] = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "decision_log": f"autopilot-logs/step-{step_num}-decision.md",
+            }
+            ap["auto_approved_details"] = details
+
             _write_sot_atomic(sot, data)
 
             return {
@@ -638,7 +697,11 @@ def cmd_add_auto_approved(project_dir, step_num):
 
 
 def cmd_set_status(project_dir, new_status):
-    """Set workflow status (e.g., in_progress → completed)."""
+    """Set workflow status (e.g., in_progress → completed).
+
+    SM-ST1: "completed" requires current_step >= total_steps to prevent
+    premature completion marking that would mis-route /start to /run.
+    """
     if new_status not in VALID_STATUSES:
         return {"valid": False, "error": f"Invalid status '{new_status}'. Must be one of: {sorted(VALID_STATUSES)}"}
     try:
@@ -647,6 +710,21 @@ def cmd_set_status(project_dir, new_status):
             data, sot = _read_sot_unlocked(project_dir)
             wf = _extract_wf(data)
             old_status = wf.get("status", "unknown")
+
+            # SM-ST1: Cross-validate "completed" against current_step/total_steps
+            if new_status == "completed":
+                cs = wf.get("current_step", 0)
+                ts = wf.get("total_steps")
+                if isinstance(ts, int) and isinstance(cs, int) and cs < ts:
+                    return {
+                        "valid": False,
+                        "error": (
+                            f"SM-ST1: Cannot set status to 'completed' — "
+                            f"current_step={cs} < total_steps={ts}. "
+                            f"Complete remaining steps first."
+                        ),
+                    }
+
             wf["status"] = new_status
             _write_sot_atomic(sot, data)
             return {

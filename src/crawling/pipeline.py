@@ -47,6 +47,8 @@ from src.crawling.contracts import RawArticle, CrawlResult, DiscoveredURL
 from src.crawling.network_guard import NetworkGuard
 from src.crawling.url_discovery import URLDiscovery
 from src.crawling.article_extractor import ArticleExtractor
+from src.crawling.browser_renderer import BrowserRenderer
+from src.crawling.adaptive_extractor import AdaptiveExtractor
 from src.crawling.crawler import JSONLWriter, CrawlState
 from src.crawling.dedup import DedupEngine
 from src.crawling.ua_manager import UAManager
@@ -267,8 +269,27 @@ class CrawlingPipeline:
         # URL Discovery
         self._url_discovery = URLDiscovery(self._guard)
 
+        # Browser Renderer (optional — for paywall/JS sites)
+        self._browser_renderer: BrowserRenderer | None = None
+        try:
+            renderer = BrowserRenderer()
+            if renderer.is_available():
+                self._browser_renderer = renderer
+                logger.info("browser_renderer_available engine=patchright/playwright")
+            else:
+                logger.info("browser_renderer_unavailable — paywall sites will use title-only")
+        except Exception as e:
+            logger.debug("browser_renderer_init_error error=%s", str(e))
+
+        # Adaptive Extractor (CSS selector fallback for rendered HTML)
+        self._adaptive_extractor = AdaptiveExtractor()
+
         # Article Extractor
-        self._extractor = ArticleExtractor(self._guard)
+        self._extractor = ArticleExtractor(
+            self._guard,
+            browser_renderer=self._browser_renderer,
+            adaptive_extractor=self._adaptive_extractor,
+        )
 
         # Deduplication engine (SQLite-backed)
         self._dedup = DedupEngine()
@@ -888,7 +909,16 @@ class CrawlingPipeline:
                 )
 
                 # Override crawl_method from discovery
-                # RawArticle is frozen, so we create a new one with the right method
+                # RawArticle is frozen, so we create a new one with the right method.
+                # Preserve non-discovery crawl_methods set by ArticleExtractor:
+                #   "adaptive" = browser render + adaptive CSS selector extraction
+                #   "playwright" = browser render + standard extraction chain
+                # Overwriting these with discovered_via would lose paywall bypass tracking.
+                effective_method = (
+                    article.crawl_method
+                    if article.crawl_method in ("adaptive", "playwright")
+                    else url_obj.discovered_via
+                )
                 article = RawArticle(
                     url=article.url,
                     title=article.title,
@@ -902,7 +932,7 @@ class CrawlingPipeline:
                     category=article.category,
                     content_hash=article.content_hash,
                     crawl_tier=article.crawl_tier,
-                    crawl_method=url_obj.discovered_via,
+                    crawl_method=effective_method,
                     is_paywall_truncated=article.is_paywall_truncated,
                 )
 

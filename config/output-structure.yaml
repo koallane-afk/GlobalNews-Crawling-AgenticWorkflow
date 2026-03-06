@@ -1,6 +1,12 @@
 # Framework config — used by workflow execution system (NOT domain data)
 # Output Structure Validation Configuration — read-only, NOT SOT
 #
+# blocking_steps: Steps where L0d failures are BLOCKING (not just WARNING).
+# Default: [] (empty — all L0d checks are WARNING during calibration).
+# Add step numbers after calibrating patterns (confirmed no false positives).
+blocking_steps: []
+#
+#
 # Used by L0d checks in validate_output_structure()
 # Step numbers are workflow-specific (GlobalNews 20-step workflow).
 # If workflow step structure changes, update this config accordingly.

@@ -37,11 +37,17 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# 3. NLP 모델 다운로드 (분석 파이프라인용)
+# 3. 브라우저 엔진 설치 (하드 페이월 사이트용)
+# Patchright (권장 — C++ 수준 봇 탐지 우회)
+pip install patchright && patchright install chromium
+# 또는 Playwright (대안)
+playwright install chromium
+
+# 4. NLP 모델 다운로드 (분석 파이프라인용)
 python3 -m spacy download en_core_web_sm
 python3 -m spacy download ko_core_news_sm
 
-# 4. 환경 검증
+# 5. 환경 검증
 python3 scripts/preflight_check.py --project-dir . --mode full --json
 ```
 
@@ -78,7 +84,7 @@ python3 scripts/preflight_check.py --project-dir . --mode full --json
 | `readiness: "blocked"` | 필수 항목 실패 | `critical_failures` 확인 후 수정 |
 | `degradations` 존재 | 일부 기능 제한 | 대부분의 사이트는 정상 작동 |
 
-> **patchright 미설치**: Extreme 난이도 사이트 5곳(Bloomberg, FT 등)이 건너뛰어질 뿐, 나머지 39개 사이트는 RSS/Sitemap으로 정상 크롤링된다.
+> **patchright 미설치**: Extreme 난이도 사이트 5곳(FT, NYTimes, WSJ, Bloomberg, Le Monde)의 하드 페이월 바이패스가 불가능하여 title-only로 수집될 뿐, 나머지 39개 사이트는 RSS/Sitemap으로 정상 크롤링된다. Playwright만 설치해도 기본 브라우저 렌더링은 동작하지만, Patchright의 C++ 수준 봇 탐지 우회 기능은 사용할 수 없다.
 
 ---
 
@@ -169,13 +175,27 @@ URL 발견 (RSS/Sitemap/HTML)
     ├── L2: Title Jaccard (0.85)
     └── L3: SimHash (Hamming ≤ 3)
     ↓
-기사 추출 (newspaper3k + BeautifulSoup)
-    ↓
-4-Level 자동 재시도 (최대 90회)
-    ├── NetworkGuard (5회)
-    ├── Mode 에스컬레이션 (2단계: RSS → HTML)
-    ├── Crawler 에스컬레이션 (3단계: requests → aiohttp → patchright)
-    └── Pipeline 에스컬레이션 (3단계: delay → rotate-UA → circuit-break)
+기사 추출 (Fundus → Trafilatura → Newspaper4k → CSS)
+    │
+    ├── 성공 → RawArticle (crawl_tier=1, crawl_method="rss"/"sitemap")
+    │
+    └── 실패 또는 페이월 감지
+            ↓
+        페이월 바이패스 (하드 페이월 사이트)
+            ├── BrowserRenderer (Patchright 서브프로세스, fresh context)
+            │       ↓
+            │   추출 체인 재시도 → 성공 시 RawArticle (crawl_tier=3, "playwright")
+            │       ↓ 실패
+            │   AdaptiveExtractor (4-stage CSS 선택자)
+            │       ↓ 성공 시 RawArticle (crawl_tier=5, "adaptive")
+            │       ↓ 실패
+            │   Title-only fallback (is_paywall_truncated=True)
+            │
+            └── 4-Level 자동 재시도 (최대 90회)
+                ├── NetworkGuard (5회)
+                ├── Mode 에스컬레이션 (2단계: RSS → HTML)
+                ├── Crawler 에스컬레이션 (3단계: requests → aiohttp → patchright)
+                └── Pipeline 에스컬레이션 (3단계: delay → rotate-UA → circuit-break)
     ↓
 JSONL 저장 (data/raw/YYYY-MM-DD/)
 ```
@@ -208,7 +228,9 @@ for src, cnt in sources.most_common():
 | RSS 변경 | 피드 URL 변경 | 자동 감지 불가 | `sources.yaml` URL 업데이트 |
 | DOM 구조 변경 | 선택자 불일치 | fallback 선택자 시도 | 어댑터 코드 수정 |
 | 타임아웃 | 사이트 응답 지연 | 재시도 (NetworkGuard 5회) | `sources.yaml` 타임아웃 증가 |
-| Paywall 추가 | 유료화 전환 | 미리보기 영역만 추출 | 사이트 비활성화 또는 전략 변경 |
+| Paywall 추가 | 유료화 전환 | BrowserRenderer(Patchright) → AdaptiveExtractor → title-only fallback | `sources.yaml` paywall 설정 추가 |
+| 페이월 false positive | 정상 기사가 페이월로 오감지 | `is_paywall_body()` 패턴은 strong/weak 2단계 분류로 false positive 최소화 | 로그에서 `is_paywall_truncated=True` 확인 후 패턴 조정 |
+| 브라우저 렌더링 실패 | Patchright/Playwright 미설치 | 사이트별 3회 연속 실패 시 자동 건너뛰기 (early bail-out) | `playwright install chromium` 또는 `pip install patchright` |
 
 ---
 

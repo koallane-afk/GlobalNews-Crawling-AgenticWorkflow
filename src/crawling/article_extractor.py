@@ -6,8 +6,10 @@ using a cascading extraction strategy:
     2. Trafilatura (general-purpose, fast, good boilerplate removal)
     3. Custom CSS selector fallback (per-site selectors from sources.yaml)
 
-For hard-paywall sites (NYT, FT, WSJ, Bloomberg, Le Monde), only title and
-metadata are extracted; the body field is empty.
+For hard-paywall sites (NYT, FT, WSJ, Bloomberg, Le Monde), a browser
+renderer is attempted first (fresh browser context, no cookies) to bypass
+metered paywalls. If rendering fails or content is still paywalled,
+falls back to title-only extraction.
 
 Reference:
     Step 5 Architecture Blueprint, Section 4.2 (RawArticle contract).
@@ -36,6 +38,106 @@ MIN_BODY_LENGTH = 100
 
 # Body length below which a paywall-capable site is flagged as truncated
 PAYWALL_TRUNCATION_THRESHOLD = 200
+
+# ---------------------------------------------------------------------------
+# P1: Paywall text detection — strong/weak pattern classification
+# ---------------------------------------------------------------------------
+# Compiled once at module load. Patterns are split into STRONG (imperative,
+# reader-directed: "Subscribe to unlock") and WEAK (factual, can appear in
+# articles about subscriptions: "per month", "$4.99/month").
+#
+# Detection logic (NO ratio — ratio is structurally flawed for paywall pages
+# because nav/footer/title text dilutes the fraction):
+#   - strong >= 2 → definitive paywall (regardless of length)
+#   - strong >= 1 AND body < 2000 chars → likely paywall
+#
+# This prevents false positives on real articles about subscription economy
+# (which have strong=0, only weak matches) while catching all real paywall
+# barrier pages (which always have imperative calls-to-action).
+#
+# Includes French patterns for Le Monde (1 of the 5 hard-paywall targets).
+#
+# Reference: Phase 0 V3 finding — FT 1064-char paywall text passed both
+# MIN_BODY_LENGTH and the previous ratio-based check (ratio=0.34 < 0.4).
+_STRONG_PAYWALL_PHRASES: list[re.Pattern[str]] = [
+    re.compile(p, re.IGNORECASE)
+    for p in [
+        # English — imperative, reader-directed
+        r"subscribe\s+to\s+(unlock|read|continue|access)",
+        r"sign\s+in\s+to\s+(read|continue|access|view)",
+        r"create\s+(an?\s+)?account\s+to",
+        r"log\s+in\s+to\s+(read|continue|access)",
+        r"this\s+(article|content|story)\s+is\s+(for\s+)?(subscribers?|members?)\s+only",
+        r"register\s+to\s+(continue|read|access)",
+        r"already\s+a\s+subscriber",
+        r"start\s+your\s+(free\s+)?subscription",
+        # NOTE: "keep reading.*free", "to continue reading", "want to read more"
+        # are intentionally EXCLUDED from STRONG — they appear in normal English
+        # writing ("analysts need to continue reading reports") and cause false
+        # positives on short real articles. They are in WEAK below.
+        # French — Le Monde paywall phrases
+        r"r[eé]serv[eé]\s+aux\s+abonn[eé]s",
+        r"abonnez[\s-]vous",
+        r"connectez[\s-]vous\s+pour",
+        r"d[eé]j[aà]\s+abonn[eé]",
+        r"acc[eé]dez\s+[aà]\s+(cet|l[''])",
+        r"cr[eé]ez?\s+un\s+compte",
+    ]
+]
+
+_WEAK_PAYWALL_PHRASES: list[re.Pattern[str]] = [
+    re.compile(p, re.IGNORECASE)
+    for p in [
+        # English — ambiguous phrases that appear in normal writing
+        r"keep\s+reading.*free",
+        r"to\s+continue\s+reading",
+        r"want\s+to\s+read\s+more",
+        # English — factual, can appear in articles about subscriptions
+        r"premium\s+content",
+        r"(free\s+)?trial\s+(offer|period|access)",
+        r"unlimited\s+access",
+        r"per\s+month|per\s+year|billed\s+(monthly|annually|yearly)",
+        r"\$\d+[\./]\d{2}\s*(per\s+|/\s*)(month|year|week)",
+        r"paywall",
+        # French — factual
+        r"offre\s+(d['']essai|sp[eé]ciale)",
+        r"acc[eè]s\s+(illimit[eé]|num[eé]rique)",
+        r"\d+[\s,]*[€]\s*(/|par)\s*(mois|an)",
+    ]
+]
+
+# Body length below which a single strong match is sufficient.
+# Real articles from major outlets are typically 2000+ chars.
+_PAYWALL_SHORT_BODY_THRESHOLD = 2000
+
+
+def is_paywall_body(text: str) -> bool:
+    """P1: Deterministic check — is this text paywall/subscription prompt?
+
+    Returns True if the text is likely paywall text rather than article content.
+    Uses strong/weak pattern classification (no LLM judgment, no ratio).
+
+    Decision logic:
+    - strong matches >= 2 → definitive paywall (any length)
+    - strong matches >= 1 AND body < 2000 chars → likely paywall
+    - Otherwise → not paywall
+
+    Strong patterns are imperative/reader-directed ("Subscribe to unlock").
+    Weak patterns are factual ("per month") and are NOT used in the decision.
+    This prevents false positives on articles about subscription economy.
+    """
+    if not text or len(text) < 50:
+        return True  # Too short to be article content
+
+    strong = sum(1 for p in _STRONG_PAYWALL_PHRASES if p.search(text))
+
+    if strong >= 2:
+        return True  # 2+ imperative paywall phrases → definitive
+
+    if strong >= 1 and len(text) < _PAYWALL_SHORT_BODY_THRESHOLD:
+        return True  # 1 strong phrase in short body → likely paywall
+
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -876,10 +978,14 @@ class ArticleExtractor:
         network_guard: NetworkGuard,
         use_fundus: bool = True,
         use_trafilatura: bool = True,
+        browser_renderer: Any | None = None,
+        adaptive_extractor: Any | None = None,
     ) -> None:
         self._guard = network_guard
         self._use_fundus = use_fundus
         self._use_trafilatura = use_trafilatura
+        self._browser_renderer = browser_renderer
+        self._adaptive_extractor = adaptive_extractor
 
     def extract(
         self,
@@ -934,8 +1040,75 @@ class ArticleExtractor:
                 logger.error("article_fetch_failed url=%s source_id=%s error=%s", url, source_id, str(e))
                 raise
 
-        # For title-only sites, skip body extraction
+        # For hard-paywall / title-only sites, attempt browser rendering first
         if is_title_only or is_hard_paywall:
+            rendered_html = self._try_browser_render(url, source_id)
+            if rendered_html is not None:
+                # Browser got HTML — run extraction chain on rendered content
+                result = self._try_extraction_chain(
+                    rendered_html, url, source_id, site_config
+                )
+                if result.body and len(result.body) >= MIN_BODY_LENGTH and not is_paywall_body(result.body):
+                    # Successful extraction from rendered HTML
+                    if not result.title and title_hint:
+                        result.title = title_hint
+                    if result.title:
+                        result.language = language
+                        if not result.category:
+                            result.category = _extract_category_from_url(url)
+                        logger.info(
+                            "paywall_bypass_success url=%s body_len=%d",
+                            url, len(result.body),
+                        )
+                        return result.to_raw_article(
+                            source_id=source_id,
+                            source_name=source_name,
+                            crawl_tier=3,
+                            crawl_method="playwright",
+                            is_paywall=True,
+                        )
+                    # Title extraction failed — fall through to title_only
+                else:
+                    # Extraction chain failed — try adaptive extractor
+                    adaptive_body = self._try_adaptive_extract(
+                        rendered_html, source_id
+                    )
+                    if adaptive_body and len(adaptive_body) >= MIN_BODY_LENGTH and not is_paywall_body(adaptive_body):
+                        if not result.title and title_hint:
+                            result.title = title_hint
+                        title = result.title
+                        if not title:
+                            try:
+                                from bs4 import BeautifulSoup
+                                title = _extract_title(BeautifulSoup(rendered_html, "html.parser"))
+                            except Exception:
+                                pass
+                        if title:
+                            logger.info(
+                                "paywall_adaptive_success url=%s body_len=%d",
+                                url, len(adaptive_body),
+                            )
+                            return RawArticle(
+                                url=url,
+                                title=title,
+                                body=adaptive_body,
+                                source_id=source_id,
+                                source_name=source_name,
+                                language=language,
+                                published_at=result.published_at,
+                                crawled_at=datetime.now(timezone.utc),
+                                author=result.author,
+                                category=result.category or _extract_category_from_url(url),
+                                content_hash=compute_content_hash(adaptive_body),
+                                crawl_tier=5,
+                                crawl_method="adaptive",
+                                is_paywall_truncated=False,
+                            )
+                    logger.info(
+                        "paywall_bypass_insufficient url=%s body_len=%d",
+                        url, len(result.body) if result.body else 0,
+                    )
+            # Browser rendering failed or content still paywalled — title only
             return self._extract_title_only(
                 html, url, source_id, source_name, language, title_hint
             )
@@ -1121,6 +1294,45 @@ class ArticleExtractor:
 
         return best_result
 
+    def _try_browser_render(self, url: str, source_id: str) -> str | None:
+        """Attempt to render a URL using the browser renderer.
+
+        Returns rendered HTML or None if renderer is unavailable or fails.
+        This is a best-effort attempt — failure is expected and non-fatal.
+        """
+        if self._browser_renderer is None:
+            return None
+        try:
+            html = self._browser_renderer.render(url, source_id=source_id)
+            if html:
+                logger.info(
+                    "browser_render_ok url=%s source_id=%s len=%d",
+                    url, source_id, len(html),
+                )
+            return html
+        except Exception as e:
+            logger.debug(
+                "browser_render_error url=%s source_id=%s error=%s",
+                url, source_id, str(e),
+            )
+            return None
+
+    def _try_adaptive_extract(self, html: str, source_id: str) -> str | None:
+        """Attempt adaptive extraction using CSS selectors and heuristics.
+
+        Returns body text or None if adaptive extractor is unavailable or fails.
+        """
+        if self._adaptive_extractor is None:
+            return None
+        try:
+            return self._adaptive_extractor.extract_body(html, source_id)
+        except Exception as e:
+            logger.debug(
+                "adaptive_extract_error source_id=%s error=%s",
+                source_id, str(e),
+            )
+            return None
+
     def _extract_title_only(
         self,
         html: str,
@@ -1129,6 +1341,7 @@ class ArticleExtractor:
         source_name: str,
         language: str,
         title_hint: str | None,
+        crawl_method: str = "rss",
     ) -> RawArticle:
         """Extract only title and metadata for hard-paywall sites.
 
@@ -1139,6 +1352,7 @@ class ArticleExtractor:
             source_name: Human-readable site name.
             language: ISO 639-1 code.
             title_hint: Title from RSS/sitemap.
+            crawl_method: How the URL was discovered (passed from caller).
 
         Returns:
             RawArticle with empty body and is_paywall_truncated=True.
@@ -1188,6 +1402,6 @@ class ArticleExtractor:
             category=category,
             content_hash="",
             crawl_tier=1,
-            crawl_method="sitemap",
+            crawl_method=crawl_method,
             is_paywall_truncated=True,
         )

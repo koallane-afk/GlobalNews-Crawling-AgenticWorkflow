@@ -234,7 +234,11 @@ class TestErrorRecovery:
         assert read["workflow"]["outputs"] == {}
 
     def test_status_transition(self, sot_mod, tmp_project_with_sot):
-        """Status transitions should work correctly."""
+        """Status transitions should work correctly.
+
+        SM-ST1: 'completed' requires current_step >= total_steps.
+        Test paused ↔ in_progress first, then advance to final step for completed.
+        """
         pd = str(tmp_project_with_sot)
 
         assert sot_mod.cmd_read(pd)["workflow"]["status"] == "in_progress"
@@ -244,6 +248,15 @@ class TestErrorRecovery:
 
         sot_mod.cmd_set_status(pd, "in_progress")
         assert sot_mod.cmd_read(pd)["workflow"]["status"] == "in_progress"
+
+        # SM-ST1: Must advance to final step before setting "completed"
+        total = sot_mod.cmd_read(pd)["workflow"]["total_steps"]
+        for step in range(1, total + 1):
+            out_path = os.path.join(pd, f"step-{step}-output.md")
+            with open(out_path, "w") as f:
+                f.write(f"# Step {step} output\n" + "x" * 200)
+            sot_mod.cmd_record_output(pd, step, out_path)
+            sot_mod.cmd_advance_step(pd, step)
 
         sot_mod.cmd_set_status(pd, "completed")
         assert sot_mod.cmd_read(pd)["workflow"]["status"] == "completed"

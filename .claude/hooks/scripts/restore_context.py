@@ -314,6 +314,23 @@ def _build_recovery_output(source, latest_path, summary, sot_warning, snapshot_a
         output_lines.append(f"■ 현재 작업: {task_info}")
     if latest_instruction:
         output_lines.append(f"■ 최근 지시: {latest_instruction}")
+
+    # Gap F: Surface richer instruction context from snapshot content
+    # Extract first 3 lines of "최근 지시 (Latest Instruction)" section from snapshot
+    if snapshot_content and not latest_instruction:
+        try:
+            li_marker = "**최근 지시 (Latest Instruction):**"
+            li_idx = snapshot_content.find(li_marker)
+            if li_idx >= 0:
+                li_block = snapshot_content[li_idx + len(li_marker):].strip()
+                li_lines = [l.strip() for l in li_block.split("\n") if l.strip()][:3]
+                if li_lines:
+                    output_lines.append(f"■ 최근 지시: {li_lines[0]}")
+                    for extra in li_lines[1:]:
+                        output_lines.append(f"  {extra}")
+        except Exception:
+            pass  # Non-blocking
+
     output_lines.append(f"■ 마지막 저장: {age_str} 전")
 
     if stats_info:
@@ -336,6 +353,29 @@ def _build_recovery_output(source, latest_path, summary, sot_warning, snapshot_a
         output_lines.append(f"■ Autopilot: {autopilot_info}")
     if team_info:
         output_lines.append(f"■ Team: {team_info}")
+
+    # Surface active team state from SOT (P1 — read_active_team_state is read-only)
+    if project_dir:
+        try:
+            from _context_lib import read_active_team_state
+            active_team = read_active_team_state(project_dir)
+            if active_team:
+                output_lines.append("")
+                output_lines.append("■ 마지막 팀 상태:")
+                output_lines.append(f"  - Team: {active_team.get('name', '?')}")
+                output_lines.append(f"  - Status: {active_team.get('status', '?')}")
+                completed = active_team.get("tasks_completed", [])
+                pending = active_team.get("tasks_pending", [])
+                if completed:
+                    output_lines.append(f"  - Completed: {completed}")
+                if pending:
+                    output_lines.append(f"  - Pending: {pending}")
+                summaries = active_team.get("completed_summaries", {})
+                if summaries:
+                    output_lines.append(f"  - Summaries: {{{', '.join(f'{k}: \"{str(v)[:60]}...\"' for k, v in list(summaries.items())[:3])}}}")
+        except Exception:
+            pass  # Non-blocking — team state is supplementary
+
     if ulw_info:
         output_lines.append(f"■ ULW: {ulw_info}")
 

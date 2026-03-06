@@ -278,6 +278,8 @@ class Crawler:
         crawl_date: Date for this crawl run (default: today).
         output_dir: Base output directory (default: data/raw/).
         max_articles_per_site: Maximum articles to extract per site.
+        browser_renderer: Optional BrowserRenderer for paywall/JS sites.
+        adaptive_extractor: Optional AdaptiveExtractor for CSS fallback.
     """
 
     def __init__(
@@ -286,6 +288,8 @@ class Crawler:
         crawl_date: str | None = None,
         output_dir: Path | None = None,
         max_articles_per_site: int = MAX_ARTICLES_PER_SITE_PER_DAY,
+        browser_renderer: Any | None = None,
+        adaptive_extractor: Any | None = None,
     ) -> None:
         self._guard = network_guard or NetworkGuard()
         self._date = crawl_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -294,7 +298,11 @@ class Crawler:
         self._max_articles = max_articles_per_site
 
         self._url_discovery = URLDiscovery(self._guard)
-        self._extractor = ArticleExtractor(self._guard)
+        self._extractor = ArticleExtractor(
+            self._guard,
+            browser_renderer=browser_renderer,
+            adaptive_extractor=adaptive_extractor,
+        )
         self._crawl_state = CrawlState(self._output_dir)
 
         # Integration points for external modules (set by caller)

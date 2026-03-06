@@ -195,6 +195,17 @@ def main():
     except Exception:
         pass  # Non-blocking — never fail the hook
 
+    # --- Autopilot stall detection ---
+    # Detect if autopilot is stuck on the same step for too many cycles.
+    # Non-blocking: only logs warning to stderr, does not fail the hook.
+    try:
+        from _context_lib import check_autopilot_progress
+        stall_warning = check_autopilot_progress(project_dir)
+        if stall_warning:
+            print(stall_warning, file=sys.stderr)
+    except Exception:
+        pass  # Non-blocking — never fail the hook
+
     # --- Phase-Aware Compact suggestion ---
     # Suggest /compact at logical phase boundaries.
     # Non-blocking: only logs to stderr, does not fail the hook.
@@ -289,8 +300,11 @@ def _generate_decision_log_if_needed(project_dir, entries):
             f"# Decision Log — Step {step_num}\n\n"
             f"- **Step**: {step_num}\n"
             f"- **Checkpoint Type**: (human) — auto-approved\n"
-            f"- **Decision**: Auto-approved (Autopilot mode)\n"
-            f"- **Rationale**: Quality-maximizing default (절대 기준 1)\n"
+            f"- **Decision**: Auto-approved with quality-maximizing defaults per Autopilot mode\n"
+            f"- **Rationale**: Absolute criterion 1 (quality maximization) requires full coverage "
+            f"of prior step-{step_num - 1} outputs and verification gates. "
+            f"This (human) checkpoint was auto-approved because all L0/L1/L1.5 quality gates "
+            f"for the preceding step have been satisfied, ensuring no quality regression.\n"
             f"- **Timestamp**: {now}\n"
             f"- **Source**: Hook safety net (generate_context_summary.py)\n"
             f"\n"

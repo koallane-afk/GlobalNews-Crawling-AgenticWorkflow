@@ -46,6 +46,27 @@ from _context_lib import (
 )
 
 
+def _load_l0d_blocking_steps(project_dir):
+    """Load blocking_steps from config/output-structure.yaml.
+
+    Returns a set of step numbers where L0d failures are blocking.
+    Returns empty set if config is missing or malformed (backward compatible).
+    """
+    config_path = os.path.join(project_dir, "config", "output-structure.yaml")
+    if not os.path.exists(config_path):
+        return set()
+    try:
+        import yaml
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        steps = data.get("blocking_steps", [])
+        if isinstance(steps, list):
+            return {int(s) for s in steps if isinstance(s, (int, float))}
+        return set()
+    except Exception:
+        return set()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="P1 Validation for pACS scoring outputs"
@@ -91,12 +112,19 @@ def main():
         if not l0_valid:
             output["valid"] = False
 
-        # L0d: Structure validation (soft — WARNING only, not FAIL)
+        # L0d: Structure validation
         l0d_valid, l0d_warnings = validate_output_structure(project_dir, step)
         output["l0d_valid"] = l0d_valid
         output["l0d_warnings"] = list(l0d_warnings)
-        # Note: L0d does NOT set output["valid"] = False
-        # L0d warnings are informational during calibration phase
+        # L0d blocking mode: if step is in blocking_steps config, propagate FAIL
+        if not l0d_valid:
+            blocking_steps = _load_l0d_blocking_steps(project_dir)
+            if step in blocking_steps:
+                output["valid"] = False
+                output["l0d_warnings"].append(
+                    f"L0d BLOCKING: Step {step} is in output-structure.yaml blocking_steps"
+                )
+            # else: L0d warnings remain informational (calibration phase)
 
     print(json.dumps(output, indent=2, ensure_ascii=False))
 

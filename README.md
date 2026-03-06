@@ -100,7 +100,7 @@ GlobalNews-Crawling-AgenticWorkflow/
 ├── dashboard.py                 ← Streamlit 대시보드 (6개 탭)
 │
 ├── src/                         ← 핵심 소스 코드 (91개 모듈, ~41,500 LOC)
-│   ├── crawling/                ← 크롤링 엔진 (44개 어댑터 + 안티블록)
+│   ├── crawling/                ← 크롤링 엔진 (44개 어댑터 + 안티블록 + 페이월 바이패스)
 │   ├── analysis/                ← 8단계 NLP 파이프라인
 │   ├── storage/                 ← Parquet + SQLite I/O
 │   └── utils/                   ← 로깅, 설정, 에러 처리
@@ -195,7 +195,7 @@ df.groupby('topic_label')['sentiment_score'].mean().sort_values()
 | Safety Hooks | 위험 명령·시크릿·SQL 차단(exit 2) + 시크릿 출력 감지(경고) + TDD 보호 + 예측적 디버깅 |
 | Context Preservation | 스냅샷 + Knowledge Archive + RLM 복원 + Learned Patterns 표면화 + Phase-Aware Compact + Retry Progress Circuit Breaker |
 
-**도메인 고유 변이**: 4-Level 재시도 (90회, Circuit Breaker 무진전 감지 포함), 44-site Adapter Pattern, 5-Layer Signal Hierarchy, Date-Partitioned Storage, HQ Gates (4종 Human-step 품질 검증)
+**도메인 고유 변이**: 4-Level 재시도 (90회, Circuit Breaker 무진전 감지 포함), 44-site Adapter Pattern, 5-Layer Signal Hierarchy, Date-Partitioned Storage, HQ Gates (4종 Human-step 품질 검증), Paywall Bypass System (BrowserRenderer + AdaptiveExtractor + is_paywall_body 영어/프랑스어 26패턴)
 
 ---
 

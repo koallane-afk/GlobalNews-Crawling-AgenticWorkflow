@@ -96,6 +96,21 @@ class TestImportanceTier:
         entry = {"pacs_min": 0}
         assert ctx._importance_tier(entry) == 2
 
+    def test_tier2_verification_outcomes(self, ctx):
+        """F2: Sessions with verification outcomes are quality trend data."""
+        entry = {"verification_outcomes": {"step_3": {"result": "PASS"}}}
+        assert ctx._importance_tier(entry) == 2
+
+    def test_tier2_review_outcomes(self, ctx):
+        """F2: Sessions with review outcomes are quality trend data."""
+        entry = {"review_outcomes": {"step_5": {"verdict": "FAIL", "issues": {}}}}
+        assert ctx._importance_tier(entry) == 2
+
+    def test_tier2_workflow_quality_summary(self, ctx):
+        """F2: Sessions with workflow quality summary are quality trend data."""
+        entry = {"workflow_quality_summary": {"step_3": {"score": 72, "grade": "YELLOW"}}}
+        assert ctx._importance_tier(entry) == 2
+
     # --- Tier 1: session had code changes ---
 
     def test_tier1_modified_files(self, ctx):

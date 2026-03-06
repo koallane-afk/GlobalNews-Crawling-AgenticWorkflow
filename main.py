@@ -16,6 +16,34 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+
+def _check_python_version() -> None:
+    """P1 runtime guard — refuse to run on Python 3.14+ (spaCy incompatible).
+
+    spaCy 3.x depends on pydantic v1 which crashes on Python 3.14 due to
+    type inference changes. This guard prevents mid-pipeline failures by
+    refusing to start on incompatible Python versions.
+
+    Deterministic. No LLM judgment. Runs before any imports.
+    """
+    # D-7 (9): Python version constraint — sync with:
+    #   pyproject.toml requires-python, setup_init.py _check_domain_venv(),
+    #   preflight_check.py check_python_version()
+    if sys.version_info >= (3, 14):
+        print(
+            f"ERROR: Python {sys.version_info.major}.{sys.version_info.minor} detected. "
+            f"This pipeline requires Python 3.12-3.13 (spaCy pydantic v1 incompatibility).\n"
+            f"Run with: .venv/bin/python main.py ...\n"
+            f"If .venv does not exist: /opt/homebrew/bin/python3.13 -m venv .venv && "
+            f".venv/bin/pip install -r requirements.txt && "
+            f".venv/bin/python -m spacy download en_core_web_sm",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+_check_python_version()
+
 # Ensure src/ is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

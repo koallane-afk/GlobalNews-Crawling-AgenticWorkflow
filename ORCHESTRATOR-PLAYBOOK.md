@@ -71,6 +71,9 @@ Every step (unless stated otherwise) follows this sequence:
 8. Run domain-specific validators
 9. Quality Gates: L0 → L1 (against Verification criteria) → L1.5 → (L2 if Review step)
    L2 Review: Read config/review-focus.yaml Step N → inject focus context into @reviewer/@fact-checker prompt
+9a. On gate FAIL: validate_retry_budget.py --step N --gate {verification|pacs|review} --project-dir . --check-and-increment
+   - can_retry=true → Abductive Diagnosis → re-execute → record-attempt
+   - can_retry=false → escalate to user (budget exhausted or circuit breaker open)
 10. Translation (if @translator step)
 11. Validate transition: validate_step_transition.py --step N
 12. Advance: sot_manager.py --advance-step N

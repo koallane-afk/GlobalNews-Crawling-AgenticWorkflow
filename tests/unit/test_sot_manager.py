@@ -415,10 +415,35 @@ class TestCmdSetStatus:
     """Tests for cmd_set_status."""
 
     def test_set_status_success(self, sot_mod, tmp_project_with_sot):
+        """Non-completion status changes always succeed."""
         pd = str(tmp_project_with_sot)
+        result = sot_mod.cmd_set_status(pd, "paused")
+        assert result["valid"] is True
+        assert result["new_status"] == "paused"
+
+    def test_set_status_completed_at_final_step(self, sot_mod, tmp_project_with_sot):
+        """SM-ST1: 'completed' succeeds when current_step >= total_steps."""
+        pd = str(tmp_project_with_sot)
+        # Create dummy output files and advance step by step to step 20
+        for step in range(1, 20):
+            out_path = os.path.join(pd, f"research/step-{step}.md")
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, "w") as f:
+                f.write("x" * 200)
+            sot_mod.cmd_record_output(pd, step, f"research/step-{step}.md")
+            res = sot_mod.cmd_advance_step(pd, step)
+            assert res["valid"], f"Advance step {step} failed: {res}"
         result = sot_mod.cmd_set_status(pd, "completed")
         assert result["valid"] is True
         assert result["new_status"] == "completed"
+
+    def test_set_status_completed_rejected_early(self, sot_mod, tmp_project_with_sot):
+        """SM-ST1: 'completed' rejected when current_step < total_steps."""
+        pd = str(tmp_project_with_sot)
+        result = sot_mod.cmd_set_status(pd, "completed")
+        assert result["valid"] is False
+        assert "SM-ST1" in result["error"]
+        assert "current_step=1" in result["error"]
 
     def test_set_invalid_status(self, sot_mod, tmp_project_with_sot):
         pd = str(tmp_project_with_sot)
@@ -689,3 +714,78 @@ class TestValidateSchemaAutopilot:
         assert "autopilot" in wf
         assert wf["autopilot"]["enabled"] is False
         assert wf["autopilot"]["auto_approved_steps"] == []
+        # Change 8: auto_approved_details must be in initial schema
+        assert "auto_approved_details" in wf["autopilot"]
+        assert wf["autopilot"]["auto_approved_details"] == {}
+
+
+# ============================================================================
+# Change 7: Activation Decision Log
+# ============================================================================
+
+class TestActivationDecisionLog:
+    """Tests for activation decision log in cmd_set_autopilot."""
+
+    def test_activation_log_created(self, sot_mod, tmp_project_with_sot):
+        """First enable → activation log created with workflow info."""
+        pd = str(tmp_project_with_sot)
+        sot_mod.cmd_set_autopilot(pd, "true")
+        log_path = os.path.join(pd, "autopilot-logs", "activation-decision.md")
+        assert os.path.exists(log_path)
+        with open(log_path, "r") as f:
+            content = f.read()
+        assert "Autopilot Activation" in content
+        assert "Test Workflow" in content
+
+    def test_activation_log_preserved_on_reenable(self, sot_mod, tmp_project_with_sot):
+        """Re-enable → original log preserved (not overwritten)."""
+        pd = str(tmp_project_with_sot)
+        sot_mod.cmd_set_autopilot(pd, "true")
+        log_path = os.path.join(pd, "autopilot-logs", "activation-decision.md")
+        with open(log_path, "r") as f:
+            original = f.read()
+        sot_mod.cmd_set_autopilot(pd, "false")
+        sot_mod.cmd_set_autopilot(pd, "true")
+        with open(log_path, "r") as f:
+            after = f.read()
+        assert original == after
+
+    def test_no_activation_log_on_disable(self, sot_mod, tmp_project_with_sot):
+        """Disable only → no activation log."""
+        pd = str(tmp_project_with_sot)
+        sot_mod.cmd_set_autopilot(pd, "false")
+        log_path = os.path.join(pd, "autopilot-logs", "activation-decision.md")
+        assert not os.path.exists(log_path)
+
+
+# ============================================================================
+# Change 8: Auto-Approved Details Audit Trail
+# ============================================================================
+
+class TestAutoApprovedDetails:
+    """Tests for auto_approved_details in cmd_add_auto_approved."""
+
+    def test_details_recorded(self, sot_mod, tmp_project_with_sot):
+        """Approval records timestamp and decision_log path."""
+        import yaml
+        pd = str(tmp_project_with_sot)
+        sot_mod.cmd_set_autopilot(pd, "true")
+        # Set current_step to 8 so approval is valid
+        sot_path = sot_mod._sot_path(pd)
+        with open(sot_path, "r") as f:
+            data = yaml.safe_load(f)
+        data["workflow"]["current_step"] = 8
+        with open(sot_path, "w") as f:
+            yaml.dump(data, f)
+        sot_mod.cmd_add_auto_approved(pd, 8)
+        read = sot_mod.cmd_read(pd)
+        details = read["workflow"]["autopilot"]["auto_approved_details"]
+        assert "8" in details
+        assert "timestamp" in details["8"]
+
+    def test_details_empty_in_initial_schema(self, sot_mod, tmp_project):
+        """cmd_init creates empty auto_approved_details."""
+        pd = str(tmp_project)
+        sot_mod.cmd_init(pd, "Test", 20)
+        read = sot_mod.cmd_read(pd)
+        assert read["workflow"]["autopilot"]["auto_approved_details"] == {}

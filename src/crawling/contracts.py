@@ -36,8 +36,9 @@ class RawArticle:
         author: Author name. None if unavailable.
         category: Article section/category. None if unavailable.
         content_hash: SHA-256 hash of normalized body text for deduplication.
-        crawl_tier: Which escalation tier succeeded (1-6).
-        crawl_method: Discovery method used: "rss", "sitemap", "dom", "playwright", "api".
+        crawl_tier: Which escalation tier succeeded (1-5).
+            1=RSS/Sitemap, 2=DOM, 3=Playwright, 4=Patchright stealth, 5=Adaptive.
+        crawl_method: Extraction method: "rss", "sitemap", "dom", "playwright", "api", "adaptive".
         is_paywall_truncated: True if body is title-only due to hard paywall.
     """
 

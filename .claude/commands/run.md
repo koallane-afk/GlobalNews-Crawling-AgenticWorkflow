@@ -4,18 +4,34 @@ Execute the GlobalNews crawling and analysis pipeline to collect real news data 
 
 This command runs the **actual system** (not the workflow builder). It crawls 44 international news sites, processes articles through an 8-stage NLP pipeline, and produces Parquet/SQLite output.
 
+### Step 0: Ensure Domain Venv
+
+The NLP pipeline requires Python 3.13 venv (spaCy is incompatible with Python 3.14 due to pydantic v1). All domain commands below use `.venv/bin/python` directly — **do NOT rely on `source .venv/bin/activate`** (Claude Code Bash tool does not persist shell state between calls).
+
+If `.venv` does not exist, create it:
+```bash
+/opt/homebrew/bin/python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt && .venv/bin/python -m spacy download en_core_web_sm
+```
+
+Verify the venv is healthy:
+```bash
+.venv/bin/python -c "import spacy; nlp = spacy.load('en_core_web_sm'); print(f'spaCy {spacy.__version__}, {len(nlp.pipe_names)} pipes')"
+```
+
+> **Note**: Hook scripts (`.claude/hooks/scripts/`) run on system python3 and are unaffected. Only domain code (`main.py`, `src/`) requires the venv.
+
 ### Step 1: Pre-flight Check
 
 Run the pre-flight validation to ensure the environment is ready:
 
-```
-python3 scripts/preflight_check.py --project-dir . --mode full --json
+```bash
+.venv/bin/python scripts/preflight_check.py --project-dir . --mode full --json
 ```
 
 Parse the JSON output:
 - **`readiness: "ready"`**: Proceed to Step 2.
 - **`readiness: "blocked"`**: Report `critical_failures` to user. Suggest fixes.
-- **`degradations`**: Report any capability limitations (e.g., spaCy broken, patchright missing) but proceed.
+- **`degradations`**: Report any capability limitations (e.g., patchright missing) but proceed.
 
 Display a summary to the user:
 ```
@@ -32,7 +48,7 @@ Degradations: {list or "none"}
 Before actual execution, run a dry-run to validate configuration:
 
 ```bash
-python3 main.py --mode full --dry-run 2>&1
+.venv/bin/python main.py --mode full --dry-run 2>&1
 ```
 
 If the dry-run fails, report the error and stop.
@@ -43,22 +59,22 @@ Based on user request, run the appropriate mode:
 
 #### Full Pipeline (crawl + analyze)
 ```bash
-python3 main.py --mode full --date $(date +%Y-%m-%d) --log-level INFO 2>&1
+.venv/bin/python main.py --mode full --date $(date +%Y-%m-%d) --log-level INFO 2>&1
 ```
 
 #### Crawl Only
 ```bash
-python3 main.py --mode crawl --date $(date +%Y-%m-%d) --log-level INFO 2>&1
+.venv/bin/python main.py --mode crawl --date $(date +%Y-%m-%d) --log-level INFO 2>&1
 ```
 
 #### Analyze Only (requires prior crawl data)
 ```bash
-python3 main.py --mode analyze --all-stages --log-level INFO 2>&1
+.venv/bin/python main.py --mode analyze --all-stages --log-level INFO 2>&1
 ```
 
 #### Specific Sites/Groups
 ```bash
-python3 main.py --mode crawl --date $(date +%Y-%m-%d) --groups A,B --log-level INFO 2>&1
+.venv/bin/python main.py --mode crawl --date $(date +%Y-%m-%d) --groups A,B --log-level INFO 2>&1
 ```
 
 **Important**: Run in foreground (not background) so progress can be monitored and errors reported in real-time.
@@ -73,7 +89,7 @@ During execution, monitor the output for:
 
 After completion, show results:
 ```bash
-python3 main.py --mode status 2>&1
+.venv/bin/python main.py --mode status 2>&1
 ```
 
 Report:
@@ -105,7 +121,7 @@ If the user's request implies a specific mode:
 
 ## Error Handling
 
-- **spaCy broken (Python 3.14)**: Crawling is unaffected. Analysis Stage 1 will use kiwipiepy for Korean but skip English preprocessing. Report this to user.
+- **spaCy broken (Python 3.14)**: main.py has a runtime version guard that refuses to run on Python 3.14+. Always use `.venv/bin/python main.py` (not `python3 main.py`). If venv is missing, see Step 0.
 - **patchright missing**: Sites requiring headless browser (Extreme difficulty) will be skipped. Most sites use RSS/sitemap and are unaffected.
 - **Network errors**: Individual site failures are logged and skipped; pipeline continues to next site.
 - **Memory limit exceeded**: Pipeline auto-aborts at 10 GB. Suggest running smaller site groups.
@@ -116,5 +132,5 @@ If the user's request implies a specific mode:
 For a quick test with minimal sites:
 ```bash
 # Test with 2-3 Korean sites only (Group A, fastest)
-python3 main.py --mode crawl --date $(date +%Y-%m-%d) --sites chosun,yna --log-level DEBUG 2>&1
+.venv/bin/python main.py --mode crawl --date $(date +%Y-%m-%d) --sites chosun,yna --log-level DEBUG 2>&1
 ```

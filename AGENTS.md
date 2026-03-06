@@ -459,8 +459,10 @@ workflow:
 
 - `autopilot.enabled`: Boolean — Autopilot 활성화 여부
 - `autopilot.auto_approved_steps`: 자동 승인된 단계 번호 목록
+- `autopilot.auto_approved_details`: 감사 추적 상세 (단계별 `{timestamp, decision_log}` — S9 스키마 검증)
 - `outputs`: 단계별 산출물 경로 — Anti-Skip Guard의 검증 대상
 - 자동 승인 결정은 별도 로그 파일(`autopilot-logs/step-N-decision.md`)에 기록 (투명성 보장)
+- 최초 Autopilot 활성화 시 `autopilot-logs/activation-decision.md` 생성 (활성화 감사 추적)
 - Decision Log 표준 템플릿: Claude Code의 `references/autopilot-decision-template.md` 참조
 
 **런타임 강화 (Claude Code 구현):**
@@ -469,8 +471,12 @@ workflow:
 |------|---------|----------|
 | **Hook** | SessionStart 컨텍스트 주입 | 세션 시작/복원 시 Autopilot 실행 규칙 + 이전 단계 검증 결과를 프롬프트에 주입 |
 | **Hook** | 스냅샷 Autopilot 섹션 | 세션 경계에서 Autopilot 상태를 IMMORTAL 우선순위로 보존 |
-| **Hook** | Stop Decision Log 안전망 | 자동 승인 패턴 감지 → Decision Log 누락 시 보완 생성 |
+| **Hook** | Stop Decision Log 안전망 | 자동 승인 패턴 감지 → Decision Log 누락 시 보완 생성 + Stall Detection (동일 단계 20 cycles 경고) |
+| **Hook** | HQ4 이전 단계 품질 증거 | (human) 단계 자동 승인 시 직전 non-human 단계의 verification-logs + pacs-logs 존재 확인 |
 | **Hook** | PostToolUse 진행 추적 | work_log에 `autopilot_step` 필드로 단계 진행 기록 |
+| **Hook** | Workflow Progress IMMORTAL | 스냅샷에 단계별 pACS 점수 + 현재 진행 단계 보존 (세션 경계에서 유실 방지) |
+| **Hook** | Decision History IMMORTAL | 스냅샷에 자동 승인 결정 이력 보존 (Rationale 첫 줄 — 세션 간 참조 가능) |
+| **Hook** | Team State 복원 | SessionStart에서 SOT `active_team` 표면화 — (team) 단계 재개 맥락 |
 | **프롬프트** | Execution Checklist | 아래 정의된 각 단계 시작/실행/완료 필수 행동 목록 (Claude Code 상세: CLAUDE.md) |
 
 > Hook 계층은 SOT를 **읽기 전용**으로만 접근한다 (절대 기준 2 준수).
@@ -483,7 +489,9 @@ workflow:
 |------|----------|
 | **단계 시작 전** | SOT `current_step` 확인, 이전 단계 산출물 파일 존재 + 비어있지 않음 검증, `Verification` 기준 읽기 |
 | **단계 실행 중** | 모든 작업 완전 실행 (축약 금지 — 절대 기준 1), 완전한 품질의 산출물 생성 |
-| **단계 완료 후** | 산출물 디스크 저장, `Verification` 기준 대비 자기 검증, 실패 시 해당 부분만 재실행(최대 10회, ULW 활성 시 15회 — §5.1.1), SOT `outputs`에 경로 기록, `current_step` +1, Decision Log 생성 |
+| **단계 완료 후** | 산출물 디스크 저장, `Verification` 기준 대비 자기 검증, 실패 시 해당 부분만 재실행(최대 10회, ULW 활성 시 15회 — §5.1.1), SOT `outputs`에 경로 기록, `current_step` +1, Decision Log 생성(DL1-DL8 검증, DL7/DL8 내용 품질 WARNING). `(team)` 단계: TM 팀 병합 검증(completed_summaries 키 vs 산출물 교차 검증 — WARNING 비차단). Stall Detection: 동일 단계 20 cycles 시 경고 |
+| **(human) 단계 추가** | HQ4: 직전 non-human 단계의 verification-logs + pacs-logs 존재 확인 (품질 게이트를 건너뛴 경우를 탐지하는 안전망) |
+| **`cmd_set_status("completed")`** | SM-ST1: `current_step < total_steps`이면 거부 — 미완료 워크플로우의 조기 완료 방지 |
 | **절대 금지** | `current_step` 2이상 한 번에 증가, 산출물 없이 진행, "자동이니까 간략하게" 축약, Verification FAIL인 채로 진행 |
 
 > **Claude Code 상세**: CLAUDE.md의 Autopilot Execution Checklist에 `(team)` 단계, 번역, Hook 연동 등 Claude Code 전용 체크리스트가 추가로 정의되어 있다.

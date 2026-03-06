@@ -65,6 +65,9 @@ def check_python_version() -> dict[str, Any]:
     version_str = f"{ver.major}.{ver.minor}.{ver.micro}"
     ok = ver.major == 3 and ver.minor >= 12
     warning = None
+    # D-7 (9): Python version constraint — sync with:
+    #   pyproject.toml requires-python, main.py _check_python_version(),
+    #   setup_init.py _check_domain_venv()
     if ver.minor >= 14:
         warning = (
             "Python 3.14 detected. spaCy may not work due to pydantic v1 "
@@ -299,10 +302,25 @@ def run_preflight(project_dir: Path, mode: str) -> dict[str, Any]:
         spacy_dep["status"] == "ok" if spacy_dep else False
     ) if mode in ("analyze", "full") else True
     if not spacy_available and mode in ("analyze", "full"):
-        degradations.append(
-            "spaCy unavailable: English text preprocessing will be skipped. "
-            "Korean analysis (kiwipiepy) is fully functional."
-        )
+        # Check if .venv exists with working spaCy — provide actionable guidance
+        # NOTE: Use .venv/bin/python directly, NOT "source activate"
+        # (Claude Code Bash tool does not persist shell state between calls)
+        venv_python = project_dir / ".venv" / "bin" / "python"
+        if venv_python.is_file():
+            degradations.append(
+                "spaCy broken in current Python runtime (likely Python 3.14 "
+                "pydantic v1 incompatibility). A working .venv exists. "
+                "Run with venv directly: .venv/bin/python scripts/preflight_check.py "
+                "--project-dir . --mode full --json"
+            )
+        else:
+            degradations.append(
+                "spaCy unavailable: English NER and lemmatization will be "
+                "disabled. Create a Python 3.13 venv for full pipeline support: "
+                "/opt/homebrew/bin/python3.13 -m venv .venv && "
+                ".venv/bin/pip install -r requirements.txt && "
+                ".venv/bin/python -m spacy download en_core_web_sm"
+            )
     patchright_dep = next(
         (r for r in dep_check["results"] if r["module"] == "patchright"), None
     )

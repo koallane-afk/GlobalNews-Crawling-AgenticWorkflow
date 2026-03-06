@@ -221,13 +221,24 @@ def validate_transition(project_dir, step_num):
 
     # ST4: Team completion check
     active_team = wf.get("active_team")
-    if isinstance(active_team, dict) and active_team.get("status") != "all_completed":
+    if isinstance(active_team, dict):
+        status = active_team.get("status")
         pending = active_team.get("tasks_pending", [])
-        if pending:
-            result["blocking"].append(f"ST4: active_team has pending tasks: {pending}")
-            result["checks"]["ST4"] = "FAIL"
+        if status != "all_completed":
+            if pending:
+                result["blocking"].append(f"ST4: active_team has pending tasks: {pending}")
+                result["checks"]["ST4"] = "FAIL"
+            else:
+                result["checks"]["ST4"] = "PASS"
         else:
-            result["checks"]["ST4"] = "PASS"
+            # ST4b: Cross-validate — all_completed must have empty pending
+            if pending:
+                result["blocking"].append(
+                    f"ST4: active_team status is 'all_completed' but tasks_pending is non-empty: {pending}"
+                )
+                result["checks"]["ST4"] = "FAIL"
+            else:
+                result["checks"]["ST4"] = "PASS"
     else:
         result["checks"]["ST4"] = "PASS"
 

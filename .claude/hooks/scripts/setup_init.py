@@ -26,6 +26,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime
 
@@ -113,6 +114,9 @@ def main():
 
     # 9. Workflow output directories (conditional — only when SOT exists)
     results.extend(_check_workflow_output_dirs(project_dir))
+
+    # 10. Domain runtime venv (P1 — ENV1a-ENV1d)
+    results.extend(_check_domain_venv(project_dir))
 
     # Write log file
     log_path = os.path.join(project_dir, ".claude", "hooks", "setup.init.log")
@@ -446,29 +450,168 @@ def _check_sot_write_safety(scripts_dir):
     )
 
 
+def _check_domain_venv(project_dir):
+    """Check domain runtime venv exists and has working spaCy (P1 — ENV1a-ENV1d).
+
+    Validates that the Python 3.13 venv for NLP domain code is properly set up.
+    This is separate from Hook infrastructure (which uses system python3).
+
+    Checks:
+        ENV1a: .venv/ directory exists
+        ENV1b: .venv/bin/python is Python 3.12-3.13
+        ENV1c: spaCy is importable in venv
+        ENV1d: en_core_web_sm model is loadable
+
+    All checks are deterministic (file system + subprocess). No LLM judgment.
+    Severity: WARNING — Hook infrastructure works without venv.
+    """
+    venv_dir = os.path.join(project_dir, ".venv")
+    venv_python = os.path.join(venv_dir, "bin", "python")
+    results = []
+
+    # ENV1a: .venv/ directory exists
+    if not os.path.isdir(venv_dir):
+        results.append(_result(
+            WARNING, "FAIL", "Domain venv (ENV1a)",
+            ".venv/ not found. Domain NLP pipeline (spaCy, etc.) requires "
+            "Python 3.13 venv. Create with: /opt/homebrew/bin/python3.13 -m venv .venv "
+            "&& .venv/bin/pip install -r requirements.txt "
+            "&& .venv/bin/python -m spacy download en_core_web_sm",
+        ))
+        return results
+
+    # ENV1b: .venv/bin/python version check (3.12-3.13)
+    if not os.path.isfile(venv_python):
+        results.append(_result(
+            WARNING, "FAIL", "Domain venv (ENV1b)",
+            f".venv/bin/python not found. Venv may be corrupted. "
+            f"Recreate with: /opt/homebrew/bin/python3.13 -m venv .venv --clear",
+        ))
+        return results
+
+    try:
+        ver_out = subprocess.run(
+            [venv_python, "--version"],
+            capture_output=True, text=True, timeout=10,
+        )
+        ver_str = ver_out.stdout.strip()  # "Python 3.13.12"
+        # Extract minor version
+        match = re.search(r"Python 3\.(\d+)", ver_str)
+        if match:
+            minor = int(match.group(1))
+            # D-7 (9): Python version constraint — sync with:
+            #   pyproject.toml requires-python, main.py _check_python_version(),
+            #   preflight_check.py check_python_version()
+            if minor in (12, 13):
+                results.append(_result(
+                    INFO, "PASS", "Domain venv (ENV1b)",
+                    f"{ver_str} — compatible for NLP pipeline",
+                ))
+            else:
+                results.append(_result(
+                    WARNING, "FAIL", "Domain venv (ENV1b)",
+                    f"{ver_str} — Python 3.12 or 3.13 required for spaCy. "
+                    f"Recreate with: /opt/homebrew/bin/python3.13 -m venv .venv --clear",
+                ))
+                return results
+        else:
+            results.append(_result(
+                WARNING, "FAIL", "Domain venv (ENV1b)",
+                f"Cannot parse version from: {ver_str}",
+            ))
+            return results
+    except (subprocess.TimeoutExpired, Exception) as e:
+        results.append(_result(
+            WARNING, "FAIL", "Domain venv (ENV1b)",
+            f"Cannot execute .venv/bin/python: {e}",
+        ))
+        return results
+
+    # ENV1c: spaCy importable
+    try:
+        sp_out = subprocess.run(
+            [venv_python, "-c", "import spacy; print(spacy.__version__)"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if sp_out.returncode == 0:
+            spacy_ver = sp_out.stdout.strip()
+            results.append(_result(
+                INFO, "PASS", "Domain venv (ENV1c)",
+                f"spaCy {spacy_ver} importable",
+            ))
+        else:
+            err_msg = sp_out.stderr.strip()[:200]
+            results.append(_result(
+                WARNING, "FAIL", "Domain venv (ENV1c)",
+                f"spaCy import failed: {err_msg}. "
+                f"Fix with: .venv/bin/pip install spacy",
+            ))
+            return results
+    except (subprocess.TimeoutExpired, Exception) as e:
+        results.append(_result(
+            WARNING, "FAIL", "Domain venv (ENV1c)",
+            f"spaCy check timed out: {e}",
+        ))
+        return results
+
+    # ENV1d: en_core_web_sm model loadable
+    try:
+        model_out = subprocess.run(
+            [venv_python, "-c",
+             "import spacy; nlp = spacy.load('en_core_web_sm'); "
+             "print(f'{len(nlp.pipe_names)} pipes')"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if model_out.returncode == 0:
+            results.append(_result(
+                INFO, "PASS", "Domain venv (ENV1d)",
+                f"en_core_web_sm loaded ({model_out.stdout.strip()})",
+            ))
+        else:
+            err_msg = model_out.stderr.strip()[:200]
+            results.append(_result(
+                WARNING, "FAIL", "Domain venv (ENV1d)",
+                f"en_core_web_sm load failed: {err_msg}. "
+                f"Fix with: .venv/bin/python -m spacy download en_core_web_sm",
+            ))
+    except (subprocess.TimeoutExpired, Exception) as e:
+        results.append(_result(
+            WARNING, "FAIL", "Domain venv (ENV1d)",
+            f"Model check timed out: {e}",
+        ))
+
+    return results
+
+
 def _check_gitignore(project_dir):
-    """Check .gitignore includes context-snapshots/ pattern."""
+    """Check .gitignore includes context-snapshots/ and .venv/ patterns."""
     gitignore_path = os.path.join(project_dir, ".gitignore")
 
     if not os.path.exists(gitignore_path):
         return _result(
             WARNING, "FAIL", ".gitignore",
-            "file not found — context-snapshots/ may be committed to git",
+            "file not found — context-snapshots/ and .venv/ may be committed to git",
         )
 
     try:
         with open(gitignore_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        if "context-snapshots" in content:
+        missing = []
+        if "context-snapshots" not in content:
+            missing.append("context-snapshots/")
+        if ".venv" not in content and "venv" not in content:
+            missing.append(".venv/")
+
+        if not missing:
             return _result(
                 INFO, "PASS", ".gitignore",
-                "includes context-snapshots/ pattern",
+                "includes context-snapshots/ and .venv/ patterns",
             )
         else:
             return _result(
                 WARNING, "FAIL", ".gitignore",
-                "does not include context-snapshots/ — snapshots may be committed",
+                f"missing patterns: {', '.join(missing)} — may be committed to git",
             )
     except Exception as e:
         return _result(WARNING, "FAIL", ".gitignore", f"cannot read: {e}")

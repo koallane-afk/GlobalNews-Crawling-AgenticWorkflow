@@ -555,6 +555,7 @@ def read_autopilot_state(project_dir):
                 "activated_at": ap.get("activated_at", ""),
                 "auto_approved_steps": ap.get("auto_approved_steps", []),
                 "current_step": wf.get("current_step", 0),
+                "total_steps": wf.get("total_steps", 0),
                 "workflow_name": wf.get("name", ""),
                 "workflow_status": wf.get("status", ""),
                 "outputs": wf.get("outputs", {}),
@@ -576,6 +577,7 @@ def read_autopilot_state(project_dir):
         "activated_at": "",
         "auto_approved_steps": [],
         "current_step": 0,
+        "total_steps": 0,
         "workflow_name": "",
         "workflow_status": "",
         "outputs": {},
@@ -584,13 +586,14 @@ def read_autopilot_state(project_dir):
     for field, pattern in [
         ("activated_at", r'activated_at\s*:\s*["\']?(.+?)["\']?\s*$'),
         ("current_step", r'current_step\s*:\s*(\d+)'),
+        ("total_steps", r'total_steps\s*:\s*(\d+)'),
         ("workflow_name", r'name\s*:\s*["\']?(.+?)["\']?\s*$'),
         ("workflow_status", r'status\s*:\s*["\']?(.+?)["\']?\s*$'),
     ]:
         m = re.search(pattern, content, re.MULTILINE)
         if m:
             val = m.group(1).strip()
-            state[field] = int(val) if field == "current_step" else val
+            state[field] = int(val) if field in ("current_step", "total_steps") else val
 
     # Extract auto_approved_steps list
     steps_match = re.search(r'auto_approved_steps\s*:\s*\[([^\]]*)\]', content)
@@ -685,6 +688,16 @@ def validate_sot_schema(ap_state):
         if status not in valid_statuses:
             warnings.append(
                 f"SOT schema: unrecognized workflow_status '{status}'"
+            )
+
+    # S5b: workflow_status "completed" cross-validation with current_step/total_steps
+    # Prevents premature completion marking that mis-routes /start → /run
+    ts = ap_state.get("total_steps")
+    if status == "completed" and isinstance(cs, int) and isinstance(ts, int) and ts > 0:
+        if cs < ts:
+            warnings.append(
+                f"SOT schema: workflow_status is 'completed' but "
+                f"current_step={cs} < total_steps={ts}"
             )
 
     # S6: auto_approved_steps — items must be int, within HUMAN_STEPS_SET, not future
@@ -861,11 +874,109 @@ def validate_sot_schema(ap_state):
                                 f".{task_id} must be dict"
                             )
 
+    # S9: auto_approved_details — must be dict of step-num-str → {timestamp, decision_log}
+    # Absence → SKIP (backward compatible — old SOT files don't have this field)
+    aad = ap_state.get("auto_approved_details")
+    if aad is not None:
+        if not isinstance(aad, dict):
+            warnings.append(
+                f"SOT schema: auto_approved_details is "
+                f"{type(aad).__name__}, expected dict"
+            )
+        else:
+            for aad_key, aad_val in aad.items():
+                if not isinstance(aad_val, dict):
+                    warnings.append(
+                        f"SOT schema: auto_approved_details.{aad_key} is "
+                        f"{type(aad_val).__name__}, expected dict"
+                    )
+                elif "timestamp" not in aad_val:
+                    warnings.append(
+                        f"SOT schema: auto_approved_details.{aad_key} "
+                        f"missing 'timestamp' field"
+                    )
+                elif "decision_log" not in aad_val:
+                    warnings.append(
+                        f"SOT schema: auto_approved_details.{aad_key} "
+                        f"missing 'decision_log' field"
+                    )
+
     return warnings
 
 
 # =============================================================================
-# Decision Log P1 Validation (DL1-DL6)
+# Autopilot Loop Stall Detection
+# =============================================================================
+
+# Threshold: number of Stop hook cycles on the same step before warning
+_AUTOPILOT_STALL_THRESHOLD = 20
+
+
+def check_autopilot_progress(project_dir):
+    """Check if autopilot is stalled on the same step for too many cycles.
+
+    Tracks Stop hook invocations per step via autopilot-logs/.progress-tracker.
+    When the same step hits _AUTOPILOT_STALL_THRESHOLD, returns a warning string.
+    Step advancement resets the cycle counter.
+
+    P1 Compliance: Deterministic file I/O + integer comparison.
+    SOT Compliance: Reads SOT for current_step (read-only). Writes only to
+        autopilot-logs/.progress-tracker (not SOT).
+    Non-blocking: Returns warning string or None.
+
+    Returns: warning message (str) or None
+    """
+    import json as _json
+
+    # Read current step from SOT
+    ap_state = read_autopilot_state(project_dir)
+    if not ap_state:
+        return None
+
+    current_step = ap_state.get("current_step")
+    if not isinstance(current_step, int):
+        return None
+
+    tracker_path = os.path.join(project_dir, "autopilot-logs", ".progress-tracker")
+
+    # Read existing tracker
+    tracker = {"step": 0, "cycles": 0}
+    if os.path.exists(tracker_path):
+        try:
+            with open(tracker_path, "r", encoding="utf-8") as f:
+                tracker = _json.load(f)
+        except Exception:
+            tracker = {"step": 0, "cycles": 0}
+
+    # Update tracker
+    if tracker.get("step") == current_step:
+        tracker["cycles"] = tracker.get("cycles", 0) + 1
+    else:
+        # Step advanced — reset counter
+        tracker = {"step": current_step, "cycles": 1}
+
+    # Write tracker (best-effort)
+    try:
+        logs_dir = os.path.join(project_dir, "autopilot-logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        with open(tracker_path, "w", encoding="utf-8") as f:
+            _json.dump(tracker, f)
+    except Exception:
+        pass
+
+    # Check threshold
+    if tracker["cycles"] >= _AUTOPILOT_STALL_THRESHOLD:
+        return (
+            f"[Autopilot Stall] Step {current_step}: {tracker['cycles']} Stop hook cycles "
+            f"without step advancement (threshold: {_AUTOPILOT_STALL_THRESHOLD}). "
+            f"Consider /compact or investigate blocking issues."
+        )
+
+    return None
+
+
+# =============================================================================
+# Decision Log P1 Validation (DL1-DL8)
 # =============================================================================
 
 # Compiled regex patterns for decision log validation (module-level, 1x per process)
@@ -877,6 +988,15 @@ _DL_TIMESTAMP_RE = re.compile(r'\*\*Timestamp\*\*\s*:', re.IGNORECASE)
 
 # Minimum size for a meaningful decision log (bytes)
 _DL_MIN_SIZE = 100
+
+# DL7: Evidence reference patterns — rationale should reference quality criteria or prior steps
+_DL_EVIDENCE_RE = re.compile(
+    r'(?:절대\s*기준|absolute\s*criter|step[- ]?\d+|prior\s+step|'
+    r'quality[- ]maxim|품질\s*극대|verification|pacs|l[012])',
+    re.IGNORECASE,
+)
+# DL8: Minimum word count for rationale (whitespace-split, works for Korean/English)
+_DL_MIN_RATIONALE_WORDS = 15
 
 
 def validate_decision_log(project_dir, step_num, current_step=None):
@@ -892,6 +1012,8 @@ def validate_decision_log(project_dir, step_num, current_step=None):
         DL4: Step number in log matches expected step_num
         DL5: Rationale field is non-empty (has meaningful content)
         DL6: Decision field is non-empty
+        DL7: Rationale references quality criteria or prior steps (WARNING)
+        DL8: Rationale has >= 15 words (WARNING)
 
     Args:
         project_dir: Project root directory
@@ -1001,6 +1123,33 @@ def validate_decision_log(project_dir, step_num, current_step=None):
     else:
         result["checks"]["DL6"] = "SKIP"  # Already caught by DL3
 
+    # DL7: Rationale references quality criteria or prior steps (WARNING — calibration)
+    if rationale_match:
+        rationale_text = rationale_match.group(1).strip()
+        if _DL_EVIDENCE_RE.search(rationale_text):
+            result["checks"]["DL7"] = "PASS"
+        else:
+            result["warnings"].append(
+                f"DL7: Rationale lacks evidence reference (quality criteria, step-N, etc.)"
+            )
+            result["checks"]["DL7"] = "WARNING"
+    else:
+        result["checks"]["DL7"] = "SKIP"
+
+    # DL8: Rationale minimum word count (WARNING — calibration)
+    if rationale_match:
+        rationale_text = rationale_match.group(1).strip()
+        word_count = len(rationale_text.split())
+        if word_count >= _DL_MIN_RATIONALE_WORDS:
+            result["checks"]["DL8"] = "PASS"
+        else:
+            result["warnings"].append(
+                f"DL8: Rationale too brief: {word_count} words (min {_DL_MIN_RATIONALE_WORDS})"
+            )
+            result["checks"]["DL8"] = "WARNING"
+    else:
+        result["checks"]["DL8"] = "SKIP"
+
     return result
 
 
@@ -1100,6 +1249,81 @@ def read_active_team_state(project_dir):
             state[field] = items
 
     return state
+
+
+def validate_team_merge(project_dir, step_num, output_path):
+    """Validate that team output includes all completed teammate contributions.
+
+    Cross-checks SOT active_team.completed_summaries keys against the merged
+    output file content. Each completed task's agent name or task key should
+    appear in the output.
+
+    P1 Compliance: Deterministic file I/O + string matching.
+    SOT Compliance: Read-only.
+
+    Args:
+        project_dir: Project root directory.
+        step_num: Current step number (for context in messages).
+        output_path: Path to the merged output file (absolute or relative).
+
+    Returns:
+        dict: {"valid": bool, "missing": list, "checked": int, "warnings": list}
+    """
+    result = {"valid": True, "missing": [], "checked": 0, "warnings": []}
+
+    team_state = read_active_team_state(project_dir)
+    if not team_state:
+        result["warnings"].append("TM1: No active_team in SOT — skipping merge validation")
+        return result
+
+    summaries = team_state.get("completed_summaries", {})
+    if not summaries:
+        result["warnings"].append("TM2: No completed_summaries — skipping merge validation")
+        return result
+
+    # Read the merged output file
+    full_path = output_path if os.path.isabs(output_path) else os.path.join(project_dir, output_path)
+    if not os.path.exists(full_path):
+        result["valid"] = False
+        result["warnings"].append(f"TM3: Output file not found: {output_path}")
+        return result
+
+    try:
+        with open(full_path, "r", encoding="utf-8") as f:
+            content = f.read().lower()
+    except Exception as e:
+        result["valid"] = False
+        result["warnings"].append(f"TM4: Cannot read output file: {e}")
+        return result
+
+    # Check that each completed task is represented in the output
+    for task_key, task_info in summaries.items():
+        result["checked"] += 1
+        # Look for task key or agent name in the merged output
+        markers = [task_key.lower()]
+        if isinstance(task_info, dict):
+            agent = task_info.get("agent", "")
+            if agent:
+                markers.append(agent.lower().lstrip("@"))
+            out = task_info.get("output", "")
+            if out:
+                # Extract basename without extension
+                base = os.path.splitext(os.path.basename(out))[0].lower()
+                if base:
+                    markers.append(base)
+
+        found = any(m in content for m in markers if m)
+        if not found:
+            result["missing"].append(task_key)
+
+    if result["missing"]:
+        result["valid"] = False
+        result["warnings"].append(
+            f"TM5: Step {step_num} merged output missing contributions from: "
+            f"{', '.join(result['missing'])} ({len(result['missing'])}/{result['checked']})"
+        )
+
+    return result
 
 
 # =============================================================================
@@ -1842,6 +2066,31 @@ def generate_snapshot_md(session_id, trigger, project_dir, entries, work_log=Non
     except Exception:
         pass  # Non-blocking — quality gate section is supplementary
 
+    # Section 2.56: Workflow Progress (IMMORTAL — conditional, only when SOT outputs exist)
+    try:
+        progress_lines = _extract_workflow_progress(project_dir)
+        if progress_lines:
+            sections.append("## 워크플로우 진행 현황 (Workflow Progress)")
+            sections.append("<!-- IMMORTAL: 세션 복원 시 전체 진행 상태 즉시 파악 -->")
+            sections.append("")
+            sections.extend(progress_lines)
+            sections.append("")
+    except Exception:
+        pass  # Non-blocking — workflow progress section is supplementary
+
+    # Section 2.58: Retry Budget State (IMMORTAL — conditional, only when retries in progress)
+    # Gap E: Preserves retry context across session boundaries
+    try:
+        retry_lines = _extract_retry_budget_state(project_dir)
+        if retry_lines:
+            sections.append("## 재시도 예산 상태 (Retry Budget State)")
+            sections.append("<!-- IMMORTAL: 세션 복원 시 재시도 맥락 보존 -->")
+            sections.append("")
+            sections.extend(retry_lines)
+            sections.append("")
+    except Exception:
+        pass  # Non-blocking — retry budget section is supplementary
+
     # Section 2.6: Active Team State (IMMORTAL — conditional, only when team active)
     try:
         team_state = read_active_team_state(project_dir)
@@ -1875,6 +2124,18 @@ def generate_snapshot_md(session_id, trigger, project_dir, entries, work_log=Non
                 sections.append("")
     except Exception:
         pass  # Non-blocking — team section is supplementary
+
+    # Section 2.62: Autopilot Decision History (IMMORTAL — conditional)
+    try:
+        decision_lines = _extract_autopilot_decisions(project_dir)
+        if decision_lines:
+            sections.append("## Autopilot 결정 이력 (Decision History)")
+            sections.append("<!-- IMMORTAL: 세션 복원 시 이전 (human) 단계 승인 근거 보존 -->")
+            sections.append("")
+            sections.extend(decision_lines)
+            sections.append("")
+    except Exception:
+        pass  # Non-blocking — decision history section is supplementary
 
     # Section 2.65: ULW State (IMMORTAL — conditional, only when active)
     try:
@@ -3260,6 +3521,136 @@ def _extract_team_summaries(project_dir):
     return None
 
 
+# Module-level compiled patterns for verification/review outcome extraction
+# KA outcome extraction regexes — separate from L2 review validation regexes
+_KA_VERIFY_RESULT_RE = re.compile(r'(?:result|status|verdict)\s*[:=]\s*(PASS|FAIL)', re.IGNORECASE)
+_KA_REVIEW_VERDICT_RE = re.compile(r'(?:verdict|overall)\s*[:=]\s*(PASS|FAIL)', re.IGNORECASE)
+_KA_REVIEW_ISSUES_RE = re.compile(
+    r'(?:Critical|Warning|Suggestion)\s*[:=]\s*(\d+)', re.IGNORECASE
+)
+_KA_PACS_COLOR_RE = re.compile(r'(RED|YELLOW|GREEN)', re.IGNORECASE)
+_KA_PACS_SCORE_NUM_RE = re.compile(r'pACS\s*[:=]?\s*(\d+)')
+
+
+def _extract_verification_outcomes(project_dir):
+    """Extract verification outcomes from verification-logs/ for KI archiving.
+
+    Scans verification-logs/step-N-verify.md files and extracts PASS/FAIL.
+
+    P1 Compliance: Deterministic file scan + regex.
+    SOT Compliance: Read-only.
+    Returns: dict {step_N: {result: "PASS"|"FAIL"}} or None.
+    """
+    vlog_dir = os.path.join(project_dir, "verification-logs")
+    if not os.path.isdir(vlog_dir):
+        return None
+
+    outcomes = {}
+    try:
+        for fname in sorted(os.listdir(vlog_dir)):
+            m = re.match(r'step-(\d+)-verify\.md$', fname)
+            if not m:
+                continue
+            step = int(m.group(1))
+            fpath = os.path.join(vlog_dir, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    content = f.read(2000)  # First 2KB is sufficient
+                vm = _KA_VERIFY_RESULT_RE.search(content)
+                outcomes[f"step_{step}"] = {
+                    "result": vm.group(1).upper() if vm else "UNKNOWN",
+                }
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return outcomes if outcomes else None
+
+
+def _extract_review_outcomes(project_dir):
+    """Extract review outcomes from review-logs/ for KI archiving.
+
+    Scans review-logs/step-N-review.md files and extracts verdict + issue counts.
+
+    P1 Compliance: Deterministic file scan + regex.
+    SOT Compliance: Read-only.
+    Returns: dict {step_N: {verdict: "PASS"|"FAIL", issues: {critical: N, warning: N}}} or None.
+    """
+    rlog_dir = os.path.join(project_dir, "review-logs")
+    if not os.path.isdir(rlog_dir):
+        return None
+
+    outcomes = {}
+    try:
+        for fname in sorted(os.listdir(rlog_dir)):
+            m = re.match(r'step-(\d+)-review\.md$', fname)
+            if not m:
+                continue
+            step = int(m.group(1))
+            fpath = os.path.join(rlog_dir, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    content = f.read(5000)  # First 5KB for issue table
+                vm = _KA_REVIEW_VERDICT_RE.search(content)
+                # Count issue types
+                issues = {"critical": 0, "warning": 0, "suggestion": 0}
+                for im in _KA_REVIEW_ISSUES_RE.finditer(content):
+                    label = im.group(0).split(":")[0].split("=")[0].strip().lower()
+                    count = int(im.group(1))
+                    if label in issues:
+                        issues[label] = max(issues[label], count)
+
+                outcomes[f"step_{step}"] = {
+                    "verdict": vm.group(1).upper() if vm else "UNKNOWN",
+                    "issues": issues,
+                }
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return outcomes if outcomes else None
+
+
+def _extract_workflow_quality_summary(project_dir):
+    """Extract per-step quality grades from pACS logs for KI archiving.
+
+    Scans pacs-logs/step-N-pacs.md files and extracts pACS score + color grade.
+
+    P1 Compliance: Deterministic file scan + regex.
+    SOT Compliance: Read-only.
+    Returns: dict {step_N: {score: int, grade: "RED"|"YELLOW"|"GREEN"}} or None.
+    """
+    plog_dir = os.path.join(project_dir, "pacs-logs")
+    if not os.path.isdir(plog_dir):
+        return None
+
+    summary = {}
+    try:
+        for fname in sorted(os.listdir(plog_dir)):
+            m = re.match(r'step-(\d+)-pacs\.md$', fname)
+            if not m:
+                continue
+            step = int(m.group(1))
+            fpath = os.path.join(plog_dir, fname)
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    content = f.read(2000)
+                score_m = _KA_PACS_SCORE_NUM_RE.search(content)
+                color_m = _KA_PACS_COLOR_RE.search(content)
+                summary[f"step_{step}"] = {
+                    "score": int(score_m.group(1)) if score_m else -1,
+                    "grade": color_m.group(1).upper() if color_m else "UNKNOWN",
+                }
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return summary if summary else None
+
+
 def extract_session_facts(session_id, trigger, project_dir, entries, token_estimate=0):
     """Extract deterministic session facts for knowledge-index.jsonl.
 
@@ -3471,6 +3862,24 @@ def extract_session_facts(session_id, trigger, project_dir, entries, token_estim
     if diagnosis_patterns:
         facts["diagnosis_patterns"] = diagnosis_patterns
 
+    # 7. Verification outcomes — archive to KI for cross-session quality learning
+    # Gap C: Enables RLM query "which steps had verification failures?"
+    verification_outcomes = _extract_verification_outcomes(project_dir)
+    if verification_outcomes:
+        facts["verification_outcomes"] = verification_outcomes
+
+    # 8. Review outcomes — archive to KI for cross-session review pattern learning
+    # Gap D: Enables RLM query "which steps had review FAILs?"
+    review_outcomes = _extract_review_outcomes(project_dir)
+    if review_outcomes:
+        facts["review_outcomes"] = review_outcomes
+
+    # 9. Workflow quality summary — archive to KI for cross-session progress tracking
+    # Gap G: Enables RLM query "which steps were RED/YELLOW/GREEN?"
+    wf_quality = _extract_workflow_quality_summary(project_dir)
+    if wf_quality:
+        facts["workflow_quality_summary"] = wf_quality
+
     return facts
 
 
@@ -3592,6 +4001,13 @@ def _importance_tier(entry):
     if entry.get("ulw_active"):
         return 2
     if entry.get("pacs_min") is not None:
+        return 2
+    # F2: Quality gate outcomes — cross-session quality trend data
+    if entry.get("verification_outcomes"):
+        return 2
+    if entry.get("review_outcomes"):
+        return 2
+    if entry.get("workflow_quality_summary"):
         return 2
 
     # Tier 1: session had code changes
@@ -4036,6 +4452,203 @@ def _extract_quality_gate_state(project_dir):
                 )
         except Exception:
             pass
+
+    return lines
+
+
+def _extract_workflow_progress(project_dir):
+    """Extract workflow progress summary for IMMORTAL snapshot preservation.
+
+    Reads SOT outputs dict + quality logs to produce a concise step-by-step
+    progress summary. Shows last 5 completed steps + current in-progress step.
+
+    P1 Compliance: Filesystem + regex only.
+    SOT Compliance: Read-only access.
+
+    Returns: list of markdown lines, or empty list if no SOT/no progress.
+    """
+    # Read SOT
+    ap_state = read_autopilot_state(project_dir)
+    if not ap_state:
+        return []
+
+    current_step = ap_state.get("current_step")
+    if not isinstance(current_step, int) or current_step < 1:
+        return []
+
+    outputs = ap_state.get("outputs", {})
+    if not outputs:
+        return []
+
+    lines = []
+
+    # Extract completed steps (up to last 5 before current)
+    completed_steps = sorted(set(
+        int(k[5:].split("-")[0])
+        for k in outputs.keys()
+        if k.startswith("step-") and k[5:].split("-")[0].isdigit()
+        and int(k[5:].split("-")[0]) < current_step
+        and "-ko" not in k  # Skip translation entries
+    ))
+
+    # Show last 5 completed steps
+    for step_num in completed_steps[-5:]:
+        pacs_path = os.path.join(
+            project_dir, "pacs-logs", f"step-{step_num}-pacs.md"
+        )
+        verify_path = os.path.join(
+            project_dir, "verification-logs", f"step-{step_num}-verify.md"
+        )
+
+        # Extract pACS score
+        pacs_score = None
+        pacs_zone = ""
+        if os.path.exists(pacs_path):
+            try:
+                with open(pacs_path, "r", encoding="utf-8") as f:
+                    content = f.read(1000)
+                score_match = re.search(
+                    r"pACS\s*[:=]\s*(\d+)|min\s*\(.*?\)\s*[:=]\s*(\d+)",
+                    content, re.IGNORECASE,
+                )
+                if score_match:
+                    pacs_score = int(score_match.group(1) or score_match.group(2))
+                    if pacs_score >= 70:
+                        pacs_zone = "GREEN"
+                    elif pacs_score >= 50:
+                        pacs_zone = "YELLOW"
+                    else:
+                        pacs_zone = "RED"
+            except Exception:
+                pass
+
+        verify_status = "?"
+        if os.path.exists(verify_path):
+            verify_status = "PASS"
+
+        parts = [f"Step {step_num}: ✓"]
+        if pacs_score is not None:
+            parts.append(f"pACS {pacs_score} ({pacs_zone})")
+        if verify_status == "PASS":
+            parts.append("verification PASS")
+        lines.append(f"- {' — '.join(parts)}")
+
+    # Current step
+    lines.append(f"- Step {current_step}: [현재 진행중]")
+
+    return lines
+
+
+def _extract_autopilot_decisions(project_dir):
+    """Extract autopilot decision history for IMMORTAL snapshot preservation.
+
+    Scans autopilot-logs/step-*-decision.md files to produce a concise
+    summary of all (human) step auto-approval decisions.
+
+    P1 Compliance: Filesystem + regex only.
+    SOT Compliance: Read-only access.
+
+    Returns: list of markdown lines, or empty list if no decisions found.
+    """
+    logs_dir = os.path.join(project_dir, "autopilot-logs")
+    if not os.path.isdir(logs_dir):
+        return []
+
+    decision_pattern = re.compile(r"^step-(\d+)-decision\.md$")
+    decisions = []
+
+    for fname in sorted(os.listdir(logs_dir)):
+        match = decision_pattern.match(fname)
+        if not match:
+            continue
+
+        step_num = int(match.group(1))
+        fpath = os.path.join(logs_dir, fname)
+
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                content = f.read(2000)
+
+            # Extract Rationale first line
+            rat_match = _DL_RATIONALE_RE.search(content)
+            rationale = rat_match.group(1).strip()[:100] if rat_match else "?"
+
+            # Extract Decision
+            dec_match = _DL_DECISION_RE.search(content)
+            decision = dec_match.group(1).strip()[:80] if dec_match else "?"
+
+            decisions.append(f"- Step {step_num}: {decision} — {rationale}")
+        except Exception:
+            decisions.append(f"- Step {step_num}: (parse error)")
+
+    return decisions
+
+
+def _extract_retry_budget_state(project_dir):
+    """Extract retry budget state for IMMORTAL snapshot preservation.
+
+    Scans {gate}-logs/.step-N-retry-count and .step-N-retry-history.jsonl
+    files to produce a concise summary of active retry states.
+
+    Gap E: Preserves retry context across session boundaries so that
+    after compact/clear, the Orchestrator immediately knows which gate
+    is being retried and how many attempts remain.
+
+    P1 Compliance: Filesystem + regex + JSON parsing only.
+    SOT Compliance: Read-only access.
+
+    Returns: list of markdown lines, or empty list if no retries active.
+    """
+    gate_dirs = {
+        "verification": "verification-logs",
+        "pacs": "pacs-logs",
+        "review": "review-logs",
+    }
+    lines = []
+
+    for gate_name, dir_name in gate_dirs.items():
+        gate_dir = os.path.join(project_dir, dir_name)
+        if not os.path.isdir(gate_dir):
+            continue
+
+        try:
+            for fname in sorted(os.listdir(gate_dir)):
+                m = re.match(r'\.step-(\d+)-retry-count$', fname)
+                if not m:
+                    continue
+                step_num = int(m.group(1))
+                count_path = os.path.join(gate_dir, fname)
+                try:
+                    with open(count_path, "r") as f:
+                        count = int(f.read().strip())
+                except (ValueError, OSError):
+                    continue
+
+                if count <= 0:
+                    continue
+
+                # Check for history file for latest score
+                hist_path = os.path.join(gate_dir, f".step-{step_num}-retry-history.jsonl")
+                latest_score = None
+                if os.path.exists(hist_path):
+                    try:
+                        with open(hist_path, "r") as f:
+                            last_line = ""
+                            for line in f:
+                                if line.strip():
+                                    last_line = line.strip()
+                            if last_line:
+                                entry = json.loads(last_line)
+                                latest_score = entry.get("pacs_score")
+                    except Exception:
+                        pass
+
+                line = f"- **{gate_name}** Step {step_num}: {count} retries used"
+                if latest_score is not None:
+                    line += f" (latest pACS: {latest_score})"
+                lines.append(line)
+        except Exception:
+            continue
 
     return lines
 

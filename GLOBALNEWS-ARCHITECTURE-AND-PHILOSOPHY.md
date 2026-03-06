@@ -223,11 +223,13 @@ data/
 src/                              (~41,500 LOC)
 ├── config/
 │   └── constants.py              350+ 상수: 경로, 임계값, 스키마
-├── crawling/                     크롤링 엔진 (13 모듈 + 44 어댑터)
+├── crawling/                     크롤링 엔진 (15 모듈 + 44 어댑터)
 │   ├── pipeline.py               크롤링 오케스트레이터 (1,080 lines)
 │   ├── network_guard.py          5-retry HTTP 클라이언트 (662 lines)
 │   ├── url_discovery.py          3-Tier URL 발견 (989 lines)
-│   ├── article_extractor.py      추출 체인 (1,193 lines)
+│   ├── article_extractor.py      추출 체인 + 페이월 감지 (~1,400 lines)
+│   ├── browser_renderer.py       서브프로세스 기반 헤드리스 브라우저 렌더링 (~256 lines)
+│   ├── adaptive_extractor.py     4-stage CSS 선택자 적응형 추출 (~198 lines)
 │   ├── dedup.py                  3-Level 중복 제거 (916 lines)
 │   ├── anti_block.py             6-Tier 에스컬레이션 (~600 lines)
 │   ├── block_detector.py         7-type 차단 진단 (671 lines)
@@ -235,7 +237,7 @@ src/                              (~41,500 LOC)
 │   ├── retry_manager.py          4-Level 재시도 조율 (~400 lines)
 │   ├── session_manager.py        쿠키/세션 생애주기 (821 lines)
 │   ├── ua_manager.py             61+ User-Agent 4-tier (942 lines)
-│   ├── contracts.py              RawArticle 데이터 계약 (~100 lines)
+│   ├── contracts.py              RawArticle 데이터 계약 (~190 lines)
 │   ├── crawl_report.py           사이트별 리포트 (~200 lines)
 │   └── adapters/                 44개 사이트별 어댑터
 │       ├── base_adapter.py       추상 기반 클래스 (450+ lines)
@@ -291,6 +293,12 @@ sources.yaml (44 sites)
 │  │    Article Extraction           │               │
 │  │  Chain: Fundus → Trafilatura    │               │
 │  │        → Newspaper4k → CSS     │               │
+│  │                                 │               │
+│  │  Paywall Branch (하드 페이월):  │               │
+│  │    BrowserRenderer (Patchright) │               │
+│  │    → Extraction Chain 재시도    │               │
+│  │    → AdaptiveExtractor (CSS)   │               │
+│  │    → Title-only fallback       │               │
 │  └──────────────┬─────────────────┘               │
 │                 │ RawArticle                       │
 │  ┌──────────────▼─────────────────┐               │
@@ -333,20 +341,22 @@ sources.yaml (44 sites)
 
 IP Block, UA Filter, Rate Limit, CAPTCHA, JS Challenge, Fingerprint, Geo-Block
 
-**6-Tier 에스컬레이션**:
+**7-Tier 에스컬레이션**:
 
 ```
 Tier 1: 딜레이 증가 + UA 회전
     ↓ 실패
 Tier 2: 세션/쿠키 재설정
     ↓ 실패
-Tier 3: Playwright (headless 브라우저)
+Tier 3: Playwright (headless 브라우저) — BrowserRenderer (서브프로세스, fresh context)
     ↓ 실패
-Tier 4: Patchright + 핑거프린트 위장
+Tier 4: Patchright + 핑거프린트 위장 — BrowserRenderer (C++ 수준 패치)
     ↓ 실패
-Tier 5: 프록시 (설정 시)
+Tier 5: AdaptiveExtractor — 4-stage CSS 선택자 적응형 추출 (§3.5.2)
     ↓ 실패
-Tier 6: Claude Code 인터랙티브 분석 (에스컬레이션)
+Tier 6: 프록시 (설정 시)
+    ↓ 실패
+Tier 7: Claude Code 인터랙티브 분석 (에스컬레이션)
 ```
 
 **Circuit Breaker 상태 머신**:
@@ -366,7 +376,85 @@ CLOSED ─(5연속 실패)─→ OPEN ─(300초 대기)─→ HALF_OPEN ─(성
 
 저장소: `data/dedup.sqlite` (크로스-런 지속)
 
-### 3.5 데이터 계약 (RawArticle)
+### 3.5 페이월 바이패스 시스템 (Paywall Bypass)
+
+하드 페이월 사이트(FT, NYTimes, WSJ, Bloomberg, Le Monde)에서 기사 본문을 추출하기 위한 3-layer 시스템이다.
+
+**설계 근거**: Wayback Machine은 하드 페이월 사이트에 비효과적이다 (아카이브된 콘텐츠도 페이월 상태 유지). 따라서 **브라우저 렌더링 + 적응형 추출**이 주요 전략이다.
+
+#### 3.5.1 BrowserRenderer (서브프로세스 기반)
+
+```
+Main Pipeline (동기, httpx)
+    │
+    └── subprocess.run(python -c RENDER_SCRIPT, timeout=45s)
+            │
+            └── Patchright (async) → fresh browser context → HTML
+```
+
+**핵심 설계 결정**:
+
+| 결정 | 근거 |
+|------|------|
+| 서브프로세스 격리 | 메인 파이프라인은 동기(httpx). Patchright는 비동기. 서브프로세스로 이벤트 루프 충돌 방지 + 프로세스 수준 장애 격리 |
+| Fresh context (쿠키 없음) | 메터드 페이월 사이트에 "첫 방문" 경험 제공 → 기사 전문 노출 |
+| Patchright 우선 | C++ 수준 자동화 패치로 봇 탐지 불가. Playwright로 fallback |
+| Hard timeout (45초) | `subprocess.run(timeout=)` — 브라우저 프로세스 hang 시 강제 kill 보장 |
+| 사이트별 실패 카운터 | 3회 연속 실패 시 해당 사이트 렌더링 건너뛰기 (early bail-out) — 파이프라인 전체 지연 방지 |
+
+#### 3.5.2 AdaptiveExtractor (4-stage CSS 선택자)
+
+브라우저 렌더링된 HTML에서 표준 추출 체인이 실패할 때 동작하는 적응형 추출기:
+
+```
+Stage 1: 캐시된 선택자 (이전 성공 패턴)
+    ↓ 실패
+Stage 2: 사이트별 알려진 선택자 (_KNOWN_SELECTORS)
+    ↓ 실패
+Stage 3: 범용 CSS 선택자 (article, main p, div.post-content 등)
+    ↓ 실패
+Stage 4: 휴리스틱 단락 추출 (<p> 태그 중 40자 이상, nav/footer/header 제외)
+```
+
+**보안**: exec()/eval() 완전 제거 (P1-3). 모든 추출은 BeautifulSoup CSS 선택자만 사용. 네트워크·파일·시스템 호출 없음.
+
+#### 3.5.3 페이월 텍스트 감지 (is_paywall_body)
+
+브라우저 렌더링 후에도 페이월이 남아있는지 판별하는 결정론적 감지기:
+
+| 분류 | 패턴 예시 | 개수 |
+|------|----------|------|
+| **Strong** (명령형, 독자 지시) | "subscribe to unlock", "this article is for subscribers only", "abonnez-vous" | 14개 (EN 8 + FR 6) |
+| **Weak** (사실적, 모호) | "premium content", "per month", "to continue reading" | 12개 (EN 9 + FR 3) |
+
+**판정 로직**: `strong ≥ 2` → 페이월 확정. `strong ≥ 1 AND len < 2000` → 짧은 본문 + 하나라도 강력한 지표 = 페이월 판정.
+
+**다국어 지원**: 영어 + 프랑스어(Le Monde) 패턴. "to continue reading" 등 일반 문장에서도 나타나는 모호한 패턴은 WEAK으로 분류하여 false positive 방지.
+
+#### 3.5.4 페이월 브랜치 흐름 (article_extractor.py)
+
+```
+기사 추출 시도 (Fundus → Trafilatura → CSS)
+    │
+    ├── 성공 (body ≥ 200자 + is_paywall_body=False) → RawArticle 반환
+    │
+    └── 실패 또는 페이월 감지
+            │
+            ├── BrowserRenderer.render(url, source_id)
+            │       ↓ 성공
+            │   추출 체인 재시도 (렌더링된 HTML에서)
+            │       ↓ 성공 + is_paywall_body=False → RawArticle (crawl_tier=3, crawl_method="playwright")
+            │       ↓ 실패
+            │   AdaptiveExtractor.extract_body(html, source_id)
+            │       ↓ 성공 → RawArticle (crawl_tier=5, crawl_method="adaptive")
+            │       ↓ 실패
+            │   Title-only fallback (is_paywall_truncated=True)
+            │
+            └── BrowserRenderer 없음 또는 실패
+                    → Title-only fallback (is_paywall_truncated=True)
+```
+
+### 3.6 데이터 계약 (RawArticle)
 
 ```python
 @dataclass(frozen=True)
@@ -382,9 +470,9 @@ class RawArticle:
     author: str | None          # 저자
     category: str | None        # 카테고리
     content_hash: str           # SHA-256 본문 해시
-    crawl_tier: int             # 사용된 티어 (1-6)
-    crawl_method: str           # RSS/Sitemap/DOM/Playwright
-    is_paywall_truncated: bool  # 페이월 절단 여부
+    crawl_tier: int             # 사용된 티어 (1=RSS/Sitemap, 2=DOM, 3=Playwright, 4=Patchright, 5=Adaptive)
+    crawl_method: str           # "rss", "sitemap", "dom", "playwright", "adaptive", "api"
+    is_paywall_truncated: bool  # 페이월 절단 여부 (하드 페이월 → title-only)
 ```
 
 `frozen=True`로 불변 객체를 보장한다. 크롤링 엔진 출력의 **유일한 계약**이며, 분석 파이프라인은 이 계약만 의존한다.
@@ -743,7 +831,7 @@ pytest -m "not slow"        # NLP 모델 로딩 제외 (빠른 실행)
 
 | 도메인 | 패키지 수 | 주요 패키지 |
 |--------|----------|-----------|
-| 크롤링 | 13 | requests, aiohttp, beautifulsoup4, lxml, feedparser, trafilatura, newspaper4k, playwright, patchright |
+| 크롤링 | 13 | httpx, beautifulsoup4, lxml, feedparser, trafilatura, newspaper4k, playwright, patchright (봇 탐지 우회) |
 | NLP | 12 | kiwipiepy, spacy, sentence-transformers, transformers, torch, bertopic, keybert, langdetect, scikit-learn, hdbscan |
 | 시계열/네트워크 | 9 | statsmodels, prophet, ruptures, PyWavelets, lifelines, networkx, python-louvain, tigramite |
 | 저장/유틸 | 10 | pyarrow, pandas, duckdb, sqlite-vec, pyyaml, pydantic, structlog, pytest |
@@ -773,12 +861,13 @@ pytest -m "not slow"        # NLP 모델 로딩 제외 (빠른 실행)
 
 | 변이 | 설명 |
 |------|------|
-| **4-Level 재시도** (D2) | 90회 자동 시도 + Tier 6 에스컬레이션 — 부모의 재시도는 10회 |
+| **4-Level 재시도** (D2) | 90회 자동 시도 + Tier 7 에스컬레이션 — 부모의 재시도는 10회 |
 | **44-site Adapter Pattern** | 사이트별 전용 어댑터 — 부모에는 없는 도메인 패턴 |
 | **5-Layer Signal Hierarchy** | Fad→Short→Mid→Long→Singularity — 뉴스 도메인 고유 |
 | **Date-Partitioned Storage** | YYYY-MM-DD 디렉터리 구조 — 시계열 분석 전제 |
 | **Conductor Pattern** (C2) | Claude Code → Python → Bash → 결과 읽기 — C1 제약 대응 |
 | **3-Level Dedup** | URL→Title→SimHash — 뉴스 중복의 다층적 특성 대응 |
+| **Paywall Bypass System** | BrowserRenderer(서브프로세스 Patchright) + AdaptiveExtractor(4-stage CSS) + is_paywall_body(Strong/Weak 26패턴, EN+FR) — 하드 페이월 사이트 5곳 대응 (ADR-054~057) |
 | **HQ Gates (4종)** | HQ1-HQ4 Human-step 품질 검증 — 자동 승인 시 이전 단계 증거 확인 |
 | **Circuit Breaker** (워크플로우) | 3회 연속 ≤5점 개선 시 OPEN — 무진전 재시도 차단 |
 | **Abductive Diagnosis** | 품질 게이트 FAIL 시 사전 증거 수집 + 가설 기반 진단 (AD1-AD10) |

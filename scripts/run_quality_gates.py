@@ -37,6 +37,10 @@ HUMAN_STEPS = frozenset({4, 8, 18})
 # D-7 cross-reference: must match ORCHESTRATOR-PLAYBOOK.md Step-Type Quick Map "Translation" column
 TRANSLATION_STEPS = {1, 3, 5, 7, 16, 19, 20}
 
+# Steps executed by agent teams — from workflow.md "(team)" annotations
+# D-7 cross-reference: must match prompt/workflow.md Step-Type Quick Map "(team)" column
+TEAM_STEPS = frozenset({2, 6, 10, 11, 13, 14})
+
 # Pre/post processing scripts per step
 STEP_SCRIPTS = {
     1: {
@@ -195,7 +199,48 @@ def _check_human_quality_gates(project_dir, step_num, ap_state):
     else:
         gates["HQ3_prev_output"] = "N/A"
 
+    # HQ4: Previous non-human step quality gate evidence
+    # Verify that the prior non-human step has verification + pACS logs.
+    # This catches cases where gates were entirely skipped.
+    prev_nh = _find_prev_non_human_step(step_num)
+    if prev_nh is not None:
+        verify_path = os.path.join(project_dir, "verification-logs", f"step-{prev_nh}-verify.md")
+        pacs_path = os.path.join(project_dir, "pacs-logs", f"step-{prev_nh}-pacs.md")
+        verify_exists = os.path.exists(verify_path)
+        pacs_exists = os.path.exists(pacs_path)
+        if verify_exists and pacs_exists:
+            gates["HQ4_prev_quality_evidence"] = "PASS"
+        elif not verify_exists and not pacs_exists:
+            # No logs at all — could be early workflow (never ran gates)
+            # WARNING only (non-blocking) to avoid breaking initial steps
+            gates["HQ4_prev_quality_evidence"] = "WARNING"
+            # Note: NOT added to blocking — WARNING is non-blocking
+        else:
+            # Partial — one exists but not the other → gate was started but incomplete
+            missing = []
+            if not verify_exists:
+                missing.append(f"verification-logs/step-{prev_nh}-verify.md")
+            if not pacs_exists:
+                missing.append(f"pacs-logs/step-{prev_nh}-pacs.md")
+            gates["HQ4_prev_quality_evidence"] = "FAIL"
+            blocking.append(
+                f"HQ4: Prior non-human step {prev_nh} missing quality gate logs: {', '.join(missing)}"
+            )
+    else:
+        gates["HQ4_prev_quality_evidence"] = "N/A"
+
     return gates, blocking
+
+
+def _find_prev_non_human_step(step_num):
+    """Walk back from step_num to find the most recent non-human step.
+
+    Returns the step number or None if no prior non-human step exists.
+    """
+    for s in range(step_num - 1, 0, -1):
+        if s not in HUMAN_STEPS:
+            return s
+    return None
 
 
 def _save_hq_log(project_dir, step_num, result):
@@ -265,11 +310,57 @@ def check_quality_gates(project_dir, step_num, check_review=False, check_autopil
 
     hooks_dir = os.path.join(project_dir, ".claude", "hooks", "scripts")
 
+    # --- Autopilot stall detection (non-blocking WARNING) ---
+    # Gap H: Integrates check_autopilot_progress() into orchestration flow
+    try:
+        sys.path.insert(0, hooks_dir)
+        from _context_lib import check_autopilot_progress
+        stall = check_autopilot_progress(project_dir, step_num)
+        if stall and stall.get("stalled"):
+            result["warnings"].append(
+                f"STALL: Step {step_num} — {stall.get('cycles', 0)} cycles without progress "
+                f"(threshold: {stall.get('threshold', 20)})"
+            )
+            result["gates"]["stall_detection"] = "WARNING"
+        else:
+            result["gates"]["stall_detection"] = "OK"
+    except Exception:
+        result["gates"]["stall_detection"] = "SKIP"
+
     # --- Pre-processing scripts check ---
     step_scripts = STEP_SCRIPTS.get(step_num, {"pre": [], "post": []})
     for script in step_scripts.get("pre", []):
         script_path = os.path.join(project_dir, script)
         result["scripts_status"]["pre"][script] = "EXISTS" if os.path.exists(script_path) else "MISSING"
+
+    # --- TM: Team Merge Validation (team steps only, pre-L0) ---
+    if step_num in TEAM_STEPS:
+        try:
+            sys.path.insert(0, hooks_dir)
+            from _context_lib import validate_team_merge, read_autopilot_state
+            ap = read_autopilot_state(project_dir)
+            if ap:
+                outputs = ap.get("outputs", {})
+                out_key = f"step-{step_num}"
+                out_path = outputs.get(out_key, "")
+                if out_path:
+                    tm_result = validate_team_merge(project_dir, step_num, out_path)
+                    result["gates"]["TM_team_merge"] = "PASS" if tm_result["valid"] else "FAIL"
+                    if tm_result.get("warnings"):
+                        result["warnings"].extend(tm_result["warnings"])
+                    if not tm_result["valid"]:
+                        # WARNING only — non-blocking during calibration phase
+                        # F1: Use warnings (not blocking) to match non-blocking intent
+                        result["warnings"].append(
+                            f"TM: Team merge validation failed — "
+                            f"missing: {tm_result.get('missing', [])}"
+                        )
+                else:
+                    result["gates"]["TM_team_merge"] = "N/A"
+            else:
+                result["gates"]["TM_team_merge"] = "N/A"
+        except Exception:
+            result["gates"]["TM_team_merge"] = "SKIP"
 
     # --- L0: Anti-Skip Guard ---
     l0_cmd = [

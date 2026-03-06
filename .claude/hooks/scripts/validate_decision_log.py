@@ -31,7 +31,7 @@ from _context_lib import validate_decision_log
 
 def main():
     parser = argparse.ArgumentParser(
-        description="P1 Validation for Autopilot Decision Log outputs (DL1-DL6)"
+        description="P1 Validation for Autopilot Decision Log outputs (DL1-DL8, DL7-DL8 WARNINGs)"
     )
     parser.add_argument(
         "--step", type=int, required=True,
