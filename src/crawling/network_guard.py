@@ -102,6 +102,9 @@ class RateLimiter:
     def wait(self) -> float:
         """Block until the rate limit interval has elapsed.
 
+        H-5 fix: calculates wait time inside lock, then sleeps OUTSIDE lock
+        to avoid blocking other threads during the sleep period.
+
         Returns:
             The actual wait time in seconds (0.0 if no wait was needed).
         """
@@ -113,13 +116,16 @@ class RateLimiter:
             if self._jitter > 0:
                 required_wait += random.uniform(0, self._jitter)
 
+            # Reserve the time slot by advancing last_request_time
             if required_wait > 0:
-                time.sleep(required_wait)
-                self._last_request_time = time.monotonic()
-                return required_wait
+                self._last_request_time = now + required_wait
             else:
                 self._last_request_time = now
                 return 0.0
+
+        # Sleep OUTSIDE the lock — other threads can compute their own slots
+        time.sleep(required_wait)
+        return required_wait
 
 
 # ---------------------------------------------------------------------------
@@ -253,8 +259,8 @@ class NetworkGuard:
                         ),
                         follow_redirects=self._follow_redirects,
                         limits=httpx.Limits(
-                            max_connections=20,
-                            max_keepalive_connections=10,
+                            max_connections=50,
+                            max_keepalive_connections=25,
                         ),
                     )
         return self._client

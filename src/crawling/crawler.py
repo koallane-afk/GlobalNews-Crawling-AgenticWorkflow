@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,15 +60,29 @@ class JSONLWriter:
     to the final path on close. This prevents partial writes from
     corrupting output files.
 
+    If the output file already exists at close time, new articles are
+    appended (multi-run / never-abandon support).
+
     Args:
         output_path: Final path for the JSONL file.
+        append: Hint that this writer will append to an existing file.
+            The actual append behavior is determined by file existence
+            at close time regardless of this flag.
     """
 
-    def __init__(self, output_path: Path) -> None:
+    def __init__(self, output_path: Path, append: bool = False) -> None:
         self._output_path = output_path
+        self._append = append
         self._temp_path: Path | None = None
         self._file = None
         self._count = 0
+        self._closed = False
+        self._lock = threading.Lock()
+
+    @property
+    def closed(self) -> bool:
+        """Whether the writer has been closed."""
+        return self._closed
 
     def open(self) -> None:
         """Open the temporary file for writing.
@@ -86,17 +101,22 @@ class JSONLWriter:
     def write_article(self, article: RawArticle) -> None:
         """Write a single article as one JSONL line.
 
+        Thread-safe: protected by internal lock for concurrent crawling.
+
         Args:
             article: RawArticle to serialize and write.
 
         Raises:
             RuntimeError: If the writer has not been opened.
         """
-        if self._file is None:
-            raise RuntimeError("JSONLWriter not opened. Call open() first.")
-        line = article.to_jsonl_line()
-        self._file.write(line + "\n")
-        self._count += 1
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("JSONLWriter already closed — write after close.")
+            if self._file is None:
+                raise RuntimeError("JSONLWriter not opened. Call open() first.")
+            line = article.to_jsonl_line()
+            self._file.write(line + "\n")
+            self._count += 1
 
     def close(self) -> int:
         """Close the file and atomically move to the final path.
@@ -104,6 +124,9 @@ class JSONLWriter:
         Returns:
             Number of articles written.
         """
+        with self._lock:
+            self._closed = True
+
         if self._file is not None:
             self._file.flush()
             os.fsync(self._file.fileno())
@@ -167,37 +190,64 @@ class CrawlState:
     def __init__(self, state_dir: Path) -> None:
         self._state_path = state_dir / ".crawl_state.json"
         self._state: dict[str, Any] = {}
+        self._lock = threading.RLock()
         self._load()
 
     def _load(self) -> None:
-        """Load state from disk if it exists."""
+        """Load state from disk if it exists.
+
+        Converts ``processed_urls`` lists from JSON to sets for O(1) lookup.
+        """
         if self._state_path.exists():
             try:
                 with open(self._state_path, "r", encoding="utf-8") as f:
                     self._state = json.load(f)
+                # C-10 fix: convert processed_urls lists → sets for O(1) lookup.
+                # JSON serialization stores sets as lists; convert back on load.
+                for site_data in self._state.values():
+                    if isinstance(site_data, dict) and "processed_urls" in site_data:
+                        site_data["processed_urls"] = set(site_data["processed_urls"])
                 logger.info("crawl_state_loaded path=%s", self._state_path)
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("crawl_state_load_error: %s", e)
                 self._state = {}
 
     def save(self) -> None:
-        """Save state to disk atomically."""
-        self._state_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp = tempfile.mkstemp(
-            suffix=".json.tmp",
-            dir=str(self._state_path.parent),
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(self._state, f, indent=2, ensure_ascii=False)
-            os.replace(temp, str(self._state_path))
-        except OSError:
-            if os.path.exists(temp):
-                os.unlink(temp)
-            raise
+        """Save state to disk atomically.
+
+        Thread-safe: serializes concurrent saves via RLock.
+        Sets are converted to sorted lists for JSON serialization (C-10).
+        """
+        with self._lock:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            # C-10: convert sets to lists for JSON serialization
+            serializable = {}
+            for site_id, site_data in self._state.items():
+                if isinstance(site_data, dict):
+                    sd = dict(site_data)
+                    if isinstance(sd.get("processed_urls"), set):
+                        sd["processed_urls"] = sorted(sd["processed_urls"])
+                    serializable[site_id] = sd
+                else:
+                    serializable[site_id] = site_data
+            fd, temp = tempfile.mkstemp(
+                suffix=".json.tmp",
+                dir=str(self._state_path.parent),
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(serializable, f, indent=2, ensure_ascii=False)
+                os.replace(temp, str(self._state_path))
+            except OSError:
+                if os.path.exists(temp):
+                    os.unlink(temp)
+                raise
 
     def is_url_processed(self, source_id: str, url: str) -> bool:
         """Check if a URL has already been processed.
+
+        Thread-safe: protected by RLock for concurrent crawling.
+        O(1) lookup via set (C-10 fix).
 
         Args:
             source_id: Site identifier.
@@ -206,23 +256,29 @@ class CrawlState:
         Returns:
             True if the URL was already processed in this crawl run.
         """
-        processed = self._state.get(source_id, {}).get("processed_urls", [])
-        return url in processed
+        with self._lock:
+            processed = self._state.get(source_id, {}).get("processed_urls", set())
+            return url in processed
 
     def mark_url_processed(self, source_id: str, url: str) -> None:
         """Mark a URL as processed.
+
+        Thread-safe: protected by RLock for concurrent crawling.
 
         Args:
             source_id: Site identifier.
             url: Article URL.
         """
-        if source_id not in self._state:
-            self._state[source_id] = {"processed_urls": [], "last_updated": ""}
-        self._state[source_id]["processed_urls"].append(url)
-        self._state[source_id]["last_updated"] = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            if source_id not in self._state:
+                self._state[source_id] = {"processed_urls": set(), "last_updated": ""}
+            self._state[source_id]["processed_urls"].add(url)
+            self._state[source_id]["last_updated"] = datetime.now(timezone.utc).isoformat()
 
     def get_processed_count(self, source_id: str) -> int:
         """Get the number of URLs processed for a site.
+
+        Thread-safe: protected by RLock for concurrent crawling.
 
         Args:
             source_id: Site identifier.
@@ -230,21 +286,27 @@ class CrawlState:
         Returns:
             Number of processed URLs.
         """
-        return len(self._state.get(source_id, {}).get("processed_urls", []))
+        with self._lock:
+            return len(self._state.get(source_id, {}).get("processed_urls", set()))
 
     def mark_site_complete(self, source_id: str) -> None:
         """Mark a site as fully crawled.
 
+        Thread-safe: protected by RLock for concurrent crawling.
+
         Args:
             source_id: Site identifier.
         """
-        if source_id not in self._state:
-            self._state[source_id] = {"processed_urls": []}
-        self._state[source_id]["complete"] = True
-        self._state[source_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            if source_id not in self._state:
+                self._state[source_id] = {"processed_urls": []}
+            self._state[source_id]["complete"] = True
+            self._state[source_id]["completed_at"] = datetime.now(timezone.utc).isoformat()
 
     def is_site_complete(self, source_id: str) -> bool:
         """Check if a site has already been fully crawled.
+
+        Thread-safe: protected by RLock for concurrent crawling.
 
         Args:
             source_id: Site identifier.
@@ -252,7 +314,8 @@ class CrawlState:
         Returns:
             True if the site is marked as complete.
         """
-        return self._state.get(source_id, {}).get("complete", False)
+        with self._lock:
+            return self._state.get(source_id, {}).get("complete", False)
 
 
 # ---------------------------------------------------------------------------
@@ -490,7 +553,11 @@ class Crawler:
             result.errors.append(f"JSONL writer error: {e}")
 
         # Phase 3: Finalize
-        self._crawl_state.mark_site_complete(source_id)
+        # C-3 fix: Only mark complete if we actually extracted articles.
+        # Marking 0-article sites as complete permanently prevents re-crawling
+        # on resume, even when the failure was transient.
+        if result.extracted_count > 0:
+            self._crawl_state.mark_site_complete(source_id)
         self._crawl_state.save()
 
         result.elapsed_seconds = time.monotonic() - start_time

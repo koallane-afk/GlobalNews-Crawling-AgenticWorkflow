@@ -122,7 +122,7 @@ NER_BATCH_SIZE = 32
 KEYBERT_TOP_N = 10
 
 # Memory management
-MAX_MEMORY_GB = 48.0  # Hard limit — host has 48 GB RAM
+MAX_MEMORY_GB = 10.0  # Hard limit — M2 Pro 16GB host, 10GB crawl budget
 GC_BETWEEN_STAGES = True
 
 # Pipeline stage timeout defaults (seconds)

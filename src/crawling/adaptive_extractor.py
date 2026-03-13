@@ -21,6 +21,7 @@ Reference: User requirement — "막히면 알아서 '실시간'으로 파이썬
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,7 @@ class AdaptiveExtractor:
         self._known_selectors = known_selectors or _KNOWN_SELECTORS
         # Cache: source_id -> list of CSS selectors that worked
         self._selector_cache: dict[str, list[str]] = {}
+        self._lock = threading.Lock()
 
     def extract_body(self, html: str, source_id: str) -> str | None:
         """Attempt to extract article body using adaptive selectors.
@@ -104,9 +106,11 @@ class AdaptiveExtractor:
 
         soup = BeautifulSoup(html, "html.parser")
 
-        # 1. Try cached selectors
-        if source_id in self._selector_cache:
-            body = self._try_selectors(soup, self._selector_cache[source_id])
+        # 1. Try cached selectors (lock for cache read)
+        with self._lock:
+            cached = self._selector_cache.get(source_id)
+        if cached is not None:
+            body = self._try_selectors(soup, cached)
             if body:
                 return body
 
@@ -115,7 +119,8 @@ class AdaptiveExtractor:
         if known:
             body = self._try_selectors(soup, known)
             if body:
-                self._selector_cache[source_id] = known
+                with self._lock:
+                    self._selector_cache[source_id] = known
                 logger.info(
                     "adaptive_known_selector_hit source_id=%s len=%d",
                     source_id, len(body),
@@ -125,7 +130,8 @@ class AdaptiveExtractor:
         # 3. Try generic selectors
         body = self._try_selectors(soup, _GENERIC_SELECTORS)
         if body:
-            self._selector_cache[source_id] = _GENERIC_SELECTORS
+            with self._lock:
+                self._selector_cache[source_id] = _GENERIC_SELECTORS
             logger.info(
                 "adaptive_generic_selector_hit source_id=%s len=%d",
                 source_id, len(body),

@@ -33,6 +33,8 @@ import json
 import logging
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -89,8 +91,54 @@ logger = logging.getLogger(__name__)
 # Pipeline Configuration
 # ---------------------------------------------------------------------------
 
-DEFAULT_CONCURRENCY = 5  # Not used yet (sequential), placeholder for async
+DEFAULT_CONCURRENCY = 5  # Max concurrent sites in ThreadPoolExecutor
 TOTALWAR_DELAY_MULTIPLIER = 2.0  # Multiply rate limit in TotalWar mode
+PER_SITE_TIMEOUT_SECONDS = 300.0  # 5 min cooperative deadline per site
+
+
+# ---------------------------------------------------------------------------
+# Cooperative Deadline — enables per-site timeout without killing threads.
+# Threads check deadline.expired at each URL iteration boundary and exit
+# cleanly, preserving partial results in CrawlState for the next round.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class SiteDeadline:
+    """Cooperative timeout signal for per-site crawling.
+
+    The deadline is checked at each URL iteration boundary in _crawl_urls().
+    When expired, the thread exits cleanly — no thread killing needed.
+    Partial results are preserved in CrawlState for the next L3/L4 round.
+    """
+
+    _deadline: float
+
+    @staticmethod
+    def create(timeout_seconds: float) -> SiteDeadline:
+        """Create a deadline from now + timeout_seconds.
+
+        Args:
+            timeout_seconds: Must be positive. Zero or negative would
+                create an already-expired deadline, silently skipping all sites.
+
+        Raises:
+            ValueError: If timeout_seconds is not positive.
+        """
+        if timeout_seconds <= 0:
+            raise ValueError(
+                f"timeout_seconds must be positive, got {timeout_seconds}"
+            )
+        return SiteDeadline(_deadline=time.monotonic() + timeout_seconds)
+
+    @property
+    def expired(self) -> bool:
+        """Check if the deadline has passed."""
+        return time.monotonic() > self._deadline
+
+    @property
+    def remaining(self) -> float:
+        """Seconds remaining until deadline (0 if expired)."""
+        return max(0.0, self._deadline - time.monotonic())
 
 
 # ---------------------------------------------------------------------------
@@ -822,10 +870,15 @@ class CrawlingPipeline:
         target_sites: dict[str, dict[str, Any]],
         restart_number: int,
     ) -> list[CrawlResult]:
-        """Run a single pass through all target sites.
+        """Run a single pass through all target sites concurrently.
 
-        For each site, runs the full per-site pipeline with Level 2
-        (Standard/TotalWar) and Level 3 (rounds) retry.
+        Uses ThreadPoolExecutor with cooperative per-site deadlines.
+        Each site crawls independently; a slow site cannot block others.
+        All thread-unsafe subsystems are protected by locks (Phase 2-3).
+
+        The cooperative deadline ensures threads exit cleanly at URL
+        boundaries — no thread killing. Partial results are preserved
+        in CrawlState for the next L3/L4 round.
 
         Args:
             target_sites: Sites to crawl.
@@ -837,79 +890,212 @@ class CrawlingPipeline:
         results: list[CrawlResult] = []
         total = len(target_sites)
 
-        # Open consolidated JSONL writer for all sites
+        # Phase 0: Pre-initialize RetryManager states to prevent race
+        # on get_state() during concurrent execution.
+        assert self._retry_manager is not None
+        for site_id in target_sites:
+            self._retry_manager.get_state(site_id)
+
+        # Phase 1: Separate skip-eligible sites from crawl-eligible sites
+        assert self._crawl_state is not None
+        assert self._circuit_breakers is not None
+        site_tasks: list[tuple[str, dict[str, Any]]] = []
+
+        for site_id, site_cfg in target_sites.items():
+            # Skip already-completed sites
+            if self._crawl_state.is_site_complete(site_id):
+                logger.info("site_already_complete site_id=%s", site_id)
+                results.append(CrawlResult(source_id=site_id))
+                continue
+
+            # Skip disabled sites — D-7 (13): ENABLED_DEFAULT from constants.py (SOT)
+            if not site_cfg.get("meta", {}).get("enabled", ENABLED_DEFAULT):
+                logger.info("site_disabled site_id=%s", site_id)
+                results.append(CrawlResult(source_id=site_id))
+                continue
+
+            # Check circuit breaker — Crawling Absolute Principle (크롤링 절대 원칙):
+            # NEVER abandon a site. When circuit breaker is OPEN, force
+            # immediate HALF_OPEN probe with maximum escalation (TotalWar).
+            if not self._circuit_breakers.is_allowed(site_id):
+                if CRAWL_NEVER_ABANDON:
+                    logger.warning(
+                        "circuit_breaker_open_force_probe site_id=%s "
+                        "state=%s policy=never_abandon",
+                        site_id, self._circuit_breakers.get_state(site_id).value,
+                    )
+                    self._circuit_breakers.force_half_open(site_id)
+                else:
+                    logger.warning(
+                        "circuit_breaker_open site_id=%s state=%s",
+                        site_id, self._circuit_breakers.get_state(site_id).value,
+                    )
+                    results.append(CrawlResult(
+                        source_id=site_id,
+                        errors=["Circuit breaker OPEN -- site skipped"],
+                    ))
+                    continue
+
+            site_tasks.append((site_id, site_cfg))
+
+        if not site_tasks:
+            return results
+
+        # P1 invariant: each thread must handle a unique site_id.
+        # Duplicate site_ids would corrupt per-site RetryManager/CrawlState.
+        _site_ids_in_flight = [sid for sid, _ in site_tasks]
+        assert len(_site_ids_in_flight) == len(set(_site_ids_in_flight)), (
+            f"P1 violation: duplicate site_ids in concurrent dispatch: "
+            f"{[s for s in _site_ids_in_flight if _site_ids_in_flight.count(s) > 1]}"
+        )
+
+        # Phase 2: Concurrent execution with cooperative deadlines.
+        # JSONLWriter is shared across threads (thread-safe via lock).
+        # ThreadPoolExecutor.__exit__ calls shutdown(wait=True), which
+        # guarantees ALL threads have finished BEFORE writer.close().
         output_path = self._output_dir / "all_articles.jsonl"
+        crawl_count = len(site_tasks)
+
+        logger.info(
+            "concurrent_crawl_start sites=%s concurrency=%s per_site_timeout=%ss restart=%s",
+            crawl_count, DEFAULT_CONCURRENCY, PER_SITE_TIMEOUT_SECONDS, restart_number,
+        )
 
         with JSONLWriter(output_path) as writer:
-            for idx, (site_id, site_cfg) in enumerate(target_sites.items(), 1):
-                logger.info(
-                    "crawl_site_start site=%s (%s/%s) restart=%s",
-                    site_id, idx, total, restart_number,
+            with ThreadPoolExecutor(
+                max_workers=DEFAULT_CONCURRENCY,
+                thread_name_prefix="crawl",
+            ) as executor:
+                futures: dict[Any, str] = {}
+
+                for idx, (site_id, site_cfg) in enumerate(site_tasks, 1):
+                    # H-15 fix: dynamic deadline based on site rate_limit and URL budget.
+                    # Sites with higher rate limits need more time per URL.
+                    crawl_cfg = site_cfg.get("crawl", {})
+                    rate_limit = crawl_cfg.get("rate_limit_seconds", DEFAULT_RATE_LIMIT_SECONDS)
+                    # Budget: rate_limit * expected_urls * 1.5 safety margin + 60s overhead
+                    # Capped between PER_SITE_TIMEOUT_SECONDS and 900s (15 min)
+                    dynamic_timeout = max(
+                        PER_SITE_TIMEOUT_SECONDS,
+                        min(rate_limit * 100 * 1.5 + 60, 900.0),
+                    )
+                    # BUG FIX: Pass timeout_seconds instead of pre-created deadline.
+                    # Previously, SiteDeadline was created here at submit time,
+                    # causing queued sites to have their deadline expire while
+                    # waiting in the ThreadPoolExecutor queue (only 5 workers).
+                    # Now the worker creates the deadline at execution time.
+                    future = executor.submit(
+                        self._crawl_site_worker,
+                        site_id, site_cfg, writer, dynamic_timeout, idx, crawl_count, restart_number,
+                    )
+                    futures[future] = site_id
+
+                # H-18 fix: total pipeline timeout to prevent indefinite hang.
+                # Budget: enough for all sites at max deadline + generous buffer.
+                total_timeout = (
+                    PER_SITE_TIMEOUT_SECONDS
+                    * (len(site_tasks) / max(DEFAULT_CONCURRENCY, 1))
+                    + 600  # 10 min buffer
                 )
 
-                # Skip already-completed sites
-                assert self._crawl_state is not None
-                if self._crawl_state.is_site_complete(site_id):
-                    logger.info("site_already_complete site_id=%s", site_id)
-                    results.append(CrawlResult(source_id=site_id))
-                    continue
-
-                # Skip disabled sites — D-7 (13): ENABLED_DEFAULT from constants.py (SOT)
-                if not site_cfg.get("meta", {}).get("enabled", ENABLED_DEFAULT):
-                    logger.info("site_disabled site_id=%s", site_id)
-                    results.append(CrawlResult(source_id=site_id))
-                    continue
-
-                # Check circuit breaker — Crawling Absolute Principle (크롤링 절대 원칙):
-                # NEVER abandon a site. When circuit breaker is OPEN, force
-                # immediate HALF_OPEN probe with maximum escalation (TotalWar).
-                assert self._circuit_breakers is not None
-                if not self._circuit_breakers.is_allowed(site_id):
-                    if CRAWL_NEVER_ABANDON:
-                        logger.warning(
-                            "circuit_breaker_open_force_probe site_id=%s "
-                            "state=%s policy=never_abandon",
-                            site_id, self._circuit_breakers.get_state(site_id).value,
-                        )
-                        self._circuit_breakers.force_half_open(site_id)
-                        # Fall through to _crawl_site_with_retry which will
-                        # escalate to TotalWar mode on failures
-                    else:
-                        logger.warning(
-                            "circuit_breaker_open site_id=%s state=%s",
-                            site_id, self._circuit_breakers.get_state(site_id).value,
-                        )
-                        results.append(CrawlResult(
-                            source_id=site_id,
-                            errors=["Circuit breaker OPEN -- site skipped"],
-                        ))
-                        continue
-
+                # Collect results as sites complete.
                 try:
-                    result = self._crawl_site_with_retry(
-                        site_id, site_cfg, writer,
-                    )
-                except KeyboardInterrupt:
-                    raise
-                except Exception as e:
-                    logger.error(
-                        "site_crawl_fatal site_id=%s error=%s error_type=%s",
-                        site_id, str(e), type(e).__name__,
-                    )
-                    result = CrawlResult(
-                        source_id=site_id,
-                        errors=[f"Fatal: {type(e).__name__}: {e}"],
-                    )
+                    for future in as_completed(futures, timeout=total_timeout):
+                        site_id = futures[future]
+                        try:
+                            result = future.result()
+                        except KeyboardInterrupt:
+                            raise
+                        except Exception as e:
+                            logger.error(
+                                "site_crawl_fatal site_id=%s error=%s error_type=%s",
+                                site_id, str(e), type(e).__name__,
+                            )
+                            result = CrawlResult(
+                                source_id=site_id,
+                                errors=[f"Fatal: {type(e).__name__}: {e}"],
+                            )
 
-                results.append(result)
+                        results.append(result)
 
-                logger.info(
-                    "crawl_site_complete site=%s articles=%s discovered=%s failed=%s elapsed=%ss",
-                    site_id, result.extracted_count, result.discovered_urls,
-                    result.failed_count, round(result.elapsed_seconds, 1),
-                )
+                        logger.info(
+                            "crawl_site_complete site=%s articles=%s discovered=%s "
+                            "failed=%s elapsed=%ss",
+                            site_id, result.extracted_count, result.discovered_urls,
+                            result.failed_count, round(result.elapsed_seconds, 1),
+                        )
+                except TimeoutError:
+                    # H-18: global timeout reached — collect whatever completed
+                    completed_ids = {r.source_id for r in results}
+                    for future, site_id in futures.items():
+                        if site_id not in completed_ids:
+                            logger.error(
+                                "site_crawl_global_timeout site_id=%s — "
+                                "deferred to next restart",
+                                site_id,
+                            )
+                            results.append(CrawlResult(
+                                source_id=site_id,
+                                errors=["Global pipeline timeout — deferred"],
+                            ))
+                            future.cancel()
+
+        # P1 cross-validation: article count in CrawlResults must match
+        # the number of articles actually written to the JSONL writer.
+        # This catches any counting inconsistency from concurrent writes.
+        concurrent_site_ids = {sid for sid, _ in site_tasks}
+        concurrent_extracted = sum(
+            r.extracted_count for r in results
+            if r.source_id in concurrent_site_ids
+        )
+        if concurrent_extracted != writer.count:
+            logger.error(
+                "P1_ARTICLE_COUNT_MISMATCH results_sum=%s writer_count=%s "
+                "delta=%s — data integrity may be compromised",
+                concurrent_extracted, writer.count,
+                concurrent_extracted - writer.count,
+            )
 
         return results
+
+    def _crawl_site_worker(
+        self,
+        site_id: str,
+        site_cfg: dict[str, Any],
+        writer: JSONLWriter,
+        timeout_seconds: float,
+        idx: int,
+        total: int,
+        restart_number: int,
+    ) -> CrawlResult:
+        """Thread worker: crawl a single site with deadline.
+
+        Thin wrapper that logs start/end and delegates to
+        _crawl_site_with_retry(). Runs in a ThreadPoolExecutor thread.
+
+        The SiteDeadline is created HERE (at execution time), not at
+        submit time. This ensures the deadline timer starts when the
+        thread actually begins work, not while waiting in the queue.
+
+        Args:
+            site_id: Site identifier.
+            site_cfg: Site configuration from sources.yaml.
+            writer: Shared JSONL writer (thread-safe via lock).
+            timeout_seconds: Seconds for cooperative deadline (created at execution time).
+            idx: 1-based site index for logging.
+            total: Total number of sites being crawled.
+            restart_number: Current L4 restart number.
+
+        Returns:
+            CrawlResult with crawl statistics.
+        """
+        # Create deadline at execution time, not submit time.
+        deadline = SiteDeadline.create(timeout_seconds)
+        logger.info(
+            "crawl_site_start site=%s (%s/%s) restart=%s deadline_remaining=%.0fs",
+            site_id, idx, total, restart_number, deadline.remaining,
+        )
+        return self._crawl_site_with_retry(site_id, site_cfg, writer, deadline)
 
     # -----------------------------------------------------------------------
     # Per-Site Crawl with Level 2+3 Retry
@@ -920,16 +1106,23 @@ class CrawlingPipeline:
         site_id: str,
         site_cfg: dict[str, Any],
         writer: JSONLWriter,
+        deadline: SiteDeadline | None = None,
     ) -> CrawlResult:
         """Crawl a single site with Level 2 and Level 3 retry.
 
         Level 2: Standard mode first, then TotalWar if >50% failure.
         Level 3: Up to 3 rounds, with increasing delays between rounds.
 
+        When a cooperative deadline is set, the method checks expiry at
+        each round boundary and propagates it to _crawl_urls(). Deadline
+        expiry does NOT mark the site as complete — it is deferred to
+        the next L3 round or L4 restart (CRAWL_NEVER_ABANDON compatible).
+
         Args:
             site_id: Site identifier.
             site_cfg: Site configuration from sources.yaml.
             writer: JSONL writer for article output.
+            deadline: Optional cooperative timeout signal.
 
         Returns:
             CrawlResult with all statistics.
@@ -953,6 +1146,18 @@ class CrawlingPipeline:
         assert self._retry_manager is not None
 
         for round_num in range(1, L3_MAX_ROUNDS + 1):
+            # Cooperative deadline check at round boundary
+            if deadline is not None and deadline.expired:
+                logger.warning(
+                    "site_deadline_expired site_id=%s round=%s — "
+                    "deferred to next round/restart",
+                    site_id, round_num,
+                )
+                result.errors.append(
+                    f"Deadline expired before round {round_num} — deferred"
+                )
+                break
+
             retry_state = self._retry_manager.get_state(site_id)
             retry_state.current_round = round_num
 
@@ -989,6 +1194,7 @@ class CrawlingPipeline:
                 site_id, site_cfg, new_urls, writer,
                 strategy=StrategyMode.STANDARD,
                 rate_limit=rate_limit,
+                deadline=deadline,
             )
             self._merge_result(result, round_result)
 
@@ -1008,6 +1214,7 @@ class CrawlingPipeline:
                         site_id, site_cfg, failed_url_objs, writer,
                         strategy=StrategyMode.TOTALWAR,
                         rate_limit=rate_limit * TOTALWAR_DELAY_MULTIPLIER,
+                        deadline=deadline,
                     )
                     self._merge_result(result, totalwar_result)
 
@@ -1018,14 +1225,18 @@ class CrawlingPipeline:
                 break
 
             if round_num < L3_MAX_ROUNDS:
-                # Delay before next round
+                # Delay before next round (deadline-aware)
                 if self._retry_manager.should_start_new_round(site_id):
                     delay = self._retry_manager.start_new_round(site_id)
+                    max_sleep = min(delay, 30.0)
+                    if deadline is not None:
+                        max_sleep = min(max_sleep, deadline.remaining)
                     logger.info(
                         "round_delay site_id=%s delay=%ss next_round=%s",
-                        site_id, delay, round_num + 1,
+                        site_id, max_sleep, round_num + 1,
                     )
-                    time.sleep(min(delay, 30.0))  # Cap actual sleep for usability
+                    if max_sleep > 0:
+                        time.sleep(max_sleep)
                 else:
                     break
 
@@ -1048,15 +1259,19 @@ class CrawlingPipeline:
     # URL Discovery
     # -----------------------------------------------------------------------
 
+    _DISCOVERY_MAX_RETRIES = 2  # C-2: retry discovery up to 2 times on failure
+
     def _discover_urls(
         self,
         site_id: str,
         site_cfg: dict[str, Any],
     ) -> list[DiscoveredURL]:
-        """Run URL discovery for a site.
+        """Run URL discovery for a site with retry on failure.
+
+        C-2 fix: retries up to _DISCOVERY_MAX_RETRIES times on exception,
+        with a short delay between retries (network transients, DNS flaps).
 
         Uses the 3-tier discovery pipeline: RSS -> Sitemap -> DOM.
-        Also tries adapter-provided section URLs for DOM discovery.
 
         Args:
             site_id: Site identifier.
@@ -1067,14 +1282,36 @@ class CrawlingPipeline:
         """
         assert self._url_discovery is not None
 
-        try:
-            discovered = self._url_discovery.discover(site_cfg, site_id)
-        except Exception as e:
+        discovered: list[DiscoveredURL] = []
+        last_error: Exception | None = None
+
+        for attempt in range(1, self._DISCOVERY_MAX_RETRIES + 1):
+            try:
+                discovered = self._url_discovery.discover(site_cfg, site_id)
+                if discovered:
+                    break
+                # Empty result on first attempt — retry once (RSS might be temporarily empty)
+                if attempt < self._DISCOVERY_MAX_RETRIES:
+                    logger.info(
+                        "discovery_empty_retry site_id=%s attempt=%s",
+                        site_id, attempt,
+                    )
+                    time.sleep(5.0)
+            except Exception as e:
+                last_error = e
+                logger.warning(
+                    "discovery_error site_id=%s attempt=%s/%s error=%s error_type=%s",
+                    site_id, attempt, self._DISCOVERY_MAX_RETRIES,
+                    str(e)[:200], type(e).__name__,
+                )
+                if attempt < self._DISCOVERY_MAX_RETRIES:
+                    time.sleep(5.0)
+
+        if not discovered and last_error is not None:
             logger.error(
-                "discovery_error site_id=%s error=%s error_type=%s",
-                site_id, str(e), type(e).__name__,
+                "discovery_failed_all_retries site_id=%s error=%s",
+                site_id, str(last_error)[:200],
             )
-            discovered = []
 
         logger.info(
             "urls_discovered site_id=%s count=%s",
@@ -1150,6 +1387,7 @@ class CrawlingPipeline:
         writer: JSONLWriter,
         strategy: int = StrategyMode.STANDARD,
         rate_limit: float = DEFAULT_RATE_LIMIT_SECONDS,
+        deadline: SiteDeadline | None = None,
     ) -> CrawlResult:
         """Fetch and extract articles for a list of URLs.
 
@@ -1160,6 +1398,7 @@ class CrawlingPipeline:
             writer: JSONL writer for output.
             strategy: Current strategy mode (Standard or TotalWar).
             rate_limit: Rate limit for this strategy.
+            deadline: Optional cooperative timeout signal.
 
         Returns:
             CrawlResult with extraction statistics.
@@ -1190,6 +1429,16 @@ class CrawlingPipeline:
             )
 
         for url_obj in urls:
+            # Cooperative deadline check — exit cleanly at URL boundary.
+            # Partial results are preserved; site NOT marked complete.
+            if deadline is not None and deadline.expired:
+                logger.warning(
+                    "site_deadline_expired_in_crawl site_id=%s processed=%s remaining=%s",
+                    site_id, result.extracted_count, len(urls) - (result.extracted_count + result.failed_count),
+                )
+                result.errors.append("Deadline expired during URL crawl — deferred")
+                break
+
             # Check article cap
             if result.extracted_count >= self._max_articles:
                 logger.info(
@@ -1198,11 +1447,19 @@ class CrawlingPipeline:
                 )
                 break
 
-            # Check circuit breaker
+            # Check circuit breaker — C-1 fix: force half_open instead of abandoning
             if not self._circuit_breakers.is_allowed(site_id):
-                logger.warning("circuit_breaker_tripped site_id=%s", site_id)
-                result.errors.append("Circuit breaker opened during crawl")
-                break
+                if CRAWL_NEVER_ABANDON:
+                    self._circuit_breakers.force_half_open(site_id)
+                    logger.warning(
+                        "circuit_breaker_force_half_open site_id=%s — "
+                        "CRAWL_NEVER_ABANDON active, retrying",
+                        site_id,
+                    )
+                else:
+                    logger.warning("circuit_breaker_tripped site_id=%s", site_id)
+                    result.errors.append("Circuit breaker opened during crawl")
+                    break
 
             # Apply UA rotation
             ua_string = self._ua_manager.get_ua(site_id)
@@ -1285,7 +1542,10 @@ class CrawlingPipeline:
                 else:
                     # Write to JSONL
                     writer.write_article(article)
-                    result.articles.append(article)
+                    # H-16 fix: don't keep full article bodies in memory.
+                    # Articles are already persisted to JSONL; keeping them in
+                    # result.articles wastes ~1.2 GB for 121 sites at scale.
+                    # extracted_count is the authoritative counter.
                     result.extracted_count += 1
 
                 # Mark success
@@ -1338,6 +1598,8 @@ class CrawlingPipeline:
                     site_id, url_obj.url,
                     error_type="RateLimitError", error_msg=str(e),
                 )
+                # C-11 fix: record circuit breaker failure for rate limits
+                self._circuit_breakers.record_failure(site_id, "rate_limit")
                 logger.warning(
                     "extraction_rate_limited url=%s site_id=%s",
                     url_obj.url[:80], site_id,
@@ -1353,6 +1615,8 @@ class CrawlingPipeline:
                     site_id, url_obj.url,
                     error_type=type(e).__name__, error_msg=str(e),
                 )
+                # H-21 fix: record circuit breaker failure for generic exceptions
+                self._circuit_breakers.record_failure(site_id, "unexpected_error")
                 logger.error(
                     "extraction_unexpected url=%s site_id=%s error=%s error_type=%s",
                     url_obj.url[:80], site_id, str(e)[:200], type(e).__name__,

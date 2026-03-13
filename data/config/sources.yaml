@@ -464,9 +464,9 @@ sources:
     language: ko
     group: D
     crawl:
-      primary_method: playwright
+      primary_method: rss
       fallback_methods:
-      - rss
+      - sitemap
       - dom
       rss_url: https://www.bloter.net/feed
       sitemap_url: /sitemap.xml
@@ -709,9 +709,8 @@ sources:
     language: ko
     group: E
     crawl:
-      primary_method: api
+      primary_method: sitemap
       fallback_methods:
-      - sitemap
       - dom
       rss_url: null
       api_feeds_page: https://www.voakorea.com/rssfeeds
@@ -926,9 +925,8 @@ sources:
     language: en
     group: E
     crawl:
-      primary_method: playwright
+      primary_method: sitemap
       fallback_methods:
-      - sitemap
       - dom
       rss_url: null
       sitemap_urls:

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -752,6 +753,7 @@ class UAManager:
     ) -> None:
         self._rng = random.Random(seed)
         self._recent_ua_window = recent_ua_window
+        self._lock = threading.Lock()
 
         # Build tier override map from sources.yaml if provided
         self._tier_override: dict[str, int] = {}
@@ -792,6 +794,8 @@ class UAManager:
     def get_ua(self, site_id: str) -> str:
         """Select a User-Agent string for the given site.
 
+        Thread-safe: protected by internal lock for concurrent crawling.
+
         Selection process:
         1. Determine tier from sources.yaml override > _SITE_TIER_MAP > default T3.
         2. For T1: always return the single Googlebot UA.
@@ -805,6 +809,11 @@ class UAManager:
         Returns:
             A User-Agent string appropriate for the site's tier.
         """
+        with self._lock:
+            return self._get_ua_unlocked(site_id)
+
+    def _get_ua_unlocked(self, site_id: str) -> str:
+        """Internal UA selection (caller must hold self._lock)."""
         tier = self._resolve_tier(site_id)
 
         if tier == 1:

@@ -513,6 +513,20 @@ class SitemapParser:
                     if lastmod_dt and lastmod_dt < cutoff:
                         continue
 
+                    # L2 heuristic: when lastmod is absent, infer date from URL.
+                    # Patterns: sitemap-2024-01.xml, sitemap-202401.xml,
+                    #           sitemap/2024/01, post-sitemap-2024-03.xml
+                    # If the inferred date is older than cutoff, skip.
+                    # If no date pattern matches, let it through (safe fallback).
+                    if lastmod_dt is None:
+                        url_date = _infer_date_from_sitemap_url(child_url)
+                        if url_date is not None and url_date < cutoff:
+                            logger.debug(
+                                "sitemap_url_date_skip url=%s inferred=%s cutoff=%s",
+                                child_url[:120], url_date.isoformat(), cutoff.isoformat(),
+                            )
+                            continue
+
                     child_sitemaps.append((child_url, lastmod_dt))
 
         logger.info(
@@ -868,20 +882,46 @@ class URLDiscovery:
                 rss_url = urljoin(base_url, rss_url)
             try:
                 return self._rss_parser.parse_feed(rss_url, source_id, max_age_days)
-            except (NetworkError, ParseError) as e:
-                logger.warning("rss_discovery_failed source_id=%s error=%s", source_id, str(e))
+            except Exception as e:
+                logger.warning("rss_discovery_failed source_id=%s error=%s error_type=%s", source_id, str(e), type(e).__name__)
                 return []
 
         elif method == "sitemap":
-            sitemap_url = crawl_config.get("sitemap_url", "/sitemap.xml")
-            try:
-                return self._sitemap_parser.parse_sitemap(
-                    sitemap_url, source_id, base_url=base_url,
-                    max_age_days=max_age_days,
-                )
-            except (NetworkError, ParseError) as e:
-                logger.warning("sitemap_discovery_failed source_id=%s error=%s", source_id, str(e))
-                return []
+            # C-6 fix: support both sitemap_url (singular) and sitemap_urls (plural).
+            # Many high-value sites (huffpost, bloomberg, buzzfeed) define multiple
+            # specialized sitemaps in sitemap_urls that were previously ignored.
+            sitemap_urls_plural = crawl_config.get("sitemap_urls", [])
+            sitemap_url_singular = crawl_config.get("sitemap_url", "/sitemap.xml")
+
+            # Build ordered URL list: plural entries first (more specific), then singular
+            sitemap_urls_to_try: list[str] = []
+            for s_url in sitemap_urls_plural:
+                if s_url and s_url not in sitemap_urls_to_try:
+                    sitemap_urls_to_try.append(s_url)
+            if sitemap_url_singular and sitemap_url_singular not in sitemap_urls_to_try:
+                sitemap_urls_to_try.append(sitemap_url_singular)
+
+            all_sitemap_results: list[DiscoveredURL] = []
+            seen_urls: set[str] = set()
+
+            for s_url in sitemap_urls_to_try:
+                try:
+                    results = self._sitemap_parser.parse_sitemap(
+                        s_url, source_id, base_url=base_url,
+                        max_age_days=max_age_days,
+                    )
+                    for r in results:
+                        if r.url not in seen_urls:
+                            seen_urls.add(r.url)
+                            all_sitemap_results.append(r)
+                except Exception as e:
+                    logger.warning(
+                        "sitemap_discovery_failed source_id=%s url=%s error=%s",
+                        source_id, s_url, str(e),
+                    )
+                    continue
+
+            return all_sitemap_results
 
         elif method == "dom":
             # DOM navigation uses sections from config or just the base URL
@@ -892,8 +932,8 @@ class URLDiscovery:
                     sections, source_id, base_url,
                     article_link_selector=article_link_selector,
                 )
-            except (NetworkError, ParseError) as e:
-                logger.warning("dom_discovery_failed source_id=%s error=%s", source_id, str(e))
+            except Exception as e:
+                logger.warning("dom_discovery_failed source_id=%s error=%s error_type=%s", source_id, str(e), type(e).__name__)
                 return []
 
         elif method == "api":
@@ -905,8 +945,8 @@ class URLDiscovery:
                 rss_url = urljoin(base_url, rss_url)
             try:
                 return self._rss_parser.parse_feed(rss_url, source_id, max_age_days)
-            except (NetworkError, ParseError) as e:
-                logger.warning("api_discovery_failed source_id=%s error=%s", source_id, str(e))
+            except Exception as e:
+                logger.warning("api_discovery_failed source_id=%s error=%s error_type=%s", source_id, str(e), type(e).__name__)
                 return []
 
         elif method == "playwright":
@@ -937,6 +977,47 @@ _DATE_PATTERNS = [
 ]
 
 _COMPILED_DATE_PATTERNS = [(re.compile(p), fmt) for p, fmt in _DATE_PATTERNS]
+
+
+# ---------------------------------------------------------------------------
+# L2 heuristic: infer date from sitemap URL when <lastmod> is absent.
+# Matches: sitemap-2024-01.xml, sitemap-202401.xml, /2024/01/, /2024-03-news
+# Returns the LAST DAY of the matched month (conservative — only skip if the
+# entire month is before cutoff).
+# ---------------------------------------------------------------------------
+_SITEMAP_URL_DATE_RE = re.compile(
+    r"(?:^|[/\-_.])(\d{4})[\-/]?(\d{2})(?=[/\-_.]|\.xml|$)"
+)
+
+
+def _infer_date_from_sitemap_url(url: str) -> datetime | None:
+    """Extract a date from a sitemap URL path for freshness filtering.
+
+    Looks for YYYY-MM or YYYYMM patterns in the URL. Returns the last
+    day of that month (UTC) so that a sitemap is only skipped when its
+    entire month is older than the cutoff.
+
+    Args:
+        url: Child sitemap URL string.
+
+    Returns:
+        datetime at end of the inferred month, or None if no pattern matched.
+    """
+    match = _SITEMAP_URL_DATE_RE.search(url)
+    if match is None:
+        return None
+    try:
+        year, month = int(match.group(1)), int(match.group(2))
+        if not (1990 <= year <= 2100 and 1 <= month <= 12):
+            return None
+        # Last day of the month: go to first of next month, subtract 1 day
+        if month == 12:
+            end_of_month = datetime(year + 1, 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+        else:
+            end_of_month = datetime(year, month + 1, 1, tzinfo=timezone.utc) - timedelta(days=1)
+        return end_of_month
+    except (ValueError, OverflowError):
+        return None
 
 
 def _parse_datetime_string(date_str: str) -> datetime | None:
