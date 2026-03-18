@@ -355,8 +355,8 @@ class TestSiteRegistrySync:
             "\n".join(result.get("errors", []))
         )
 
-    def test_total_121_sites(self):
-        """All lists must have exactly 121 sites."""
+    def test_total_116_sites(self):
+        """All lists must have exactly 116 sites."""
         validator = _import_from_path(
             "validate_site_registry_sync",
             os.path.join(SCRIPTS_DIR, "validate_site_registry_sync.py"),

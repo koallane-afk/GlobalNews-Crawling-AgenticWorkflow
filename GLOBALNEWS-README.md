@@ -1,6 +1,6 @@
 # GlobalNews — 뉴스 크롤링 & 빅데이터 분석 시스템
 
-> **121개 국제 뉴스 사이트 자동 수집 → 56개 NLP 분석 기법 → 5-Layer 신호 분류 → Parquet/SQLite 출력**
+> **116개 국제 뉴스 사이트 자동 수집 → 56개 NLP 분석 기법 → 5-Layer 신호 분류 → Parquet/SQLite 출력**
 
 | 항목 | 내용 |
 |------|------|
@@ -20,7 +20,7 @@
 ## 핵심 스펙
 
 ```
-INPUT:  121개 뉴스 사이트 (10개 그룹, 14+ 언어)
+INPUT:  116개 뉴스 사이트 (10개 그룹, 14+ 언어)
         ├── Group A: 한국 주요 일간지 (5): 조선, 중앙, 동아, 한겨레, 연합
         ├── Group B: 한국 경제지 (4): 매경, 한경, 파이낸셜, 머니투데이
         ├── Group C: 한국 니치 (3): 노컷, 국민, 오마이
@@ -167,12 +167,12 @@ GlobalNews-Crawling-AgenticWorkflow/
 │   │   ├── dedup.py             (3-Level: URL → Title → SimHash)
 │   │   ├── anti_block.py        (6-Tier 에스컬레이션 + DynamicBypassEngine)
 │   │   ├── retry_manager.py     (4-Level 재시도, 최대 90회, 12개 전략)
-│   │   └── adapters/            (121개 사이트별 어댑터)
+│   │   └── adapters/            (116개 사이트별 어댑터)
 │   │       ├── base_adapter.py  (추상 기반 클래스)
 │   │       ├── kr_major/        (12: 조선, 중앙, 동아, 한겨레, 연합 등)
 │   │       ├── kr_tech/         (10: Bloter, 전자신문, ZDNet, Insight 등)
 │   │       ├── english/         (22: NYT, FT, WSJ, CNN, Bloomberg, BBC 등)
-│   │       └── multilingual/    (77: AlJazeera, SCMP, Spiegel, Corriere 등)
+│   │       └── multilingual/    (72: AlJazeera, SCMP, Spiegel, Corriere 등)
 │   ├── analysis/                ← 8단계 NLP 파이프라인
 │   │   ├── pipeline.py          (분석 오케스트레이터)
 │   │   ├── stage1_preprocessing.py   (전처리: Kiwi + spaCy)
@@ -193,7 +193,7 @@ GlobalNews-Crawling-AgenticWorkflow/
 │       └── self_recovery.py     (자기 복구 메커니즘)
 │
 ├── config/                      ← 설정 파일
-│   ├── sources.yaml             (121개 사이트 설정)
+│   ├── sources.yaml             (116개 사이트 설정)
 │   ├── review-focus.yaml        (단계별 리뷰 집중 영역 — Framework config)
 │   ├── output-structure.yaml    (단계별 산출물 구조 패턴 — Framework config)
 │   └── crontab.txt              (cron 설정 템플릿)
@@ -231,7 +231,7 @@ GlobalNews-Crawling-AgenticWorkflow/
 
 ### D1 — Dynamic-First 크롤링 + 페이월 바이패스
 
-5단계 크롤링 전략: 정적 HTML → DOM 탐색 → 동적 렌더링(Playwright/Patchright) → 적응형 CSS 추출(AdaptiveExtractor) → Title-only fallback. 각 사이트별 맞춤 어댑터로 121개 사이트를 개별 최적화. **DynamicBypassEngine**이 7가지 차단 유형별 최적 전략을 5-Tier로 자동 에스컬레이션하며, Phase A(12개 전략 디스패치) → Phase B(TotalWar fallback)의 **Never-Abandon 루프**로 수집률을 극대화한다.
+5단계 크롤링 전략: 정적 HTML → DOM 탐색 → 동적 렌더링(Playwright/Patchright) → 적응형 CSS 추출(AdaptiveExtractor) → Title-only fallback. 각 사이트별 맞춤 어댑터로 116개 사이트를 개별 최적화. **DynamicBypassEngine**이 7가지 차단 유형별 최적 전략을 5-Tier로 자동 에스컬레이션하며, Phase A(12개 전략 디스패치) → Phase B(TotalWar fallback)의 **Never-Abandon 루프**로 수집률을 극대화한다.
 
 **하드 페이월 사이트** (FT, NYTimes, WSJ, Bloomberg, Le Monde): `BrowserRenderer`가 서브프로세스에서 Patchright를 실행하여 쿠키 없는 "첫 방문" 경험으로 기사 전문 추출. 실패 시 `AdaptiveExtractor`가 4-stage CSS 선택자 전략으로 본문 추출. `is_paywall_body()`가 영어+프랑스어 14개 강력 패턴 + 12개 약한 패턴으로 페이월 잔존 여부를 결정론적으로 판별.
 
@@ -341,7 +341,7 @@ pytest -m "not slow"     # 느린 NLP 모델 테스트 제외
 | Safety Hooks | 위험 명령 차단(exit 2) + 시크릿 출력 감지(경고) + TDD 보호 + 예측적 디버깅 |
 | Context Preservation | 스냅샷 + Knowledge Archive + RLM 복원 + Learned Patterns 표면화 + Importance-Based Retention + Phase-Aware Compact |
 
-**도메인 고유 변이**: 4-Level 재시도 (90회, Circuit Breaker 무진전 감지 포함), 121-site Adapter Pattern (10 Groups, A-J), DynamicBypassEngine (12개 전략, 5-Tier, 7 BlockTypes) + Never-Abandon 루프, **SiteDeadline Fairness Yield** (데드라인 만료 시 워커 양보 → 재큐잉 → 바운디드 반복, P1 `deadline_yielded` 플래그로 false completion 봉쇄), **CRAWL_NEVER_ABANDON Multi-Pass** (L4 재시작 후 최대 `MULTI_PASS_MAX_EXTRA`(10)회 반복 크롤링, 미완료 사이트 실패 시 `crawl_exhausted_sites.json` 리포트 생성, CrawlState-first 완료 판정), 5-Layer Signal Hierarchy, Date-Partitioned Storage, Conductor Pattern, HQ Gates (4종 Human-step 품질 검증), Autopilot Mode, Paywall Bypass System (BrowserRenderer + AdaptiveExtractor + is_paywall_body 영어/프랑스어 26패턴), SM5 Quality Gate Evidence Guard (SOT advance 시 verification+pACS 증거 물리적 강제), P1 사이트 레지스트리 교차 검증 (`validate_site_registry_sync.py` — 5개 소스 동기화), ENABLED_DEFAULT SOT 중앙화 (`constants.py` 단일 SOT → 5개 consumer import + `validate_enabled_default_sync.py` ED1-ED7/ED-CROSS 교차 검증)
+**도메인 고유 변이**: 4-Level 재시도 (90회, Circuit Breaker 무진전 감지 포함), 116-site Adapter Pattern (10 Groups, A-J), DynamicBypassEngine (12개 전략, 5-Tier, 7 BlockTypes) + Never-Abandon 루프, **SiteDeadline Fairness Yield** (데드라인 만료 시 워커 양보 → 재큐잉 → 바운디드 반복, P1 `deadline_yielded` 플래그로 false completion 봉쇄), **CRAWL_NEVER_ABANDON Multi-Pass** (L4 재시작 후 최대 `MULTI_PASS_MAX_EXTRA`(10)회 반복 크롤링, 미완료 사이트 실패 시 `crawl_exhausted_sites.json` 리포트 생성, CrawlState-first 완료 판정), 5-Layer Signal Hierarchy, Date-Partitioned Storage, Conductor Pattern, HQ Gates (4종 Human-step 품질 검증), Autopilot Mode, Paywall Bypass System (BrowserRenderer + AdaptiveExtractor + is_paywall_body 영어/프랑스어 26패턴), SM5 Quality Gate Evidence Guard (SOT advance 시 verification+pACS 증거 물리적 강제), P1 사이트 레지스트리 교차 검증 (`validate_site_registry_sync.py` — 5개 소스 동기화), ENABLED_DEFAULT SOT 중앙화 (`constants.py` 단일 SOT → 5개 consumer import + `validate_enabled_default_sync.py` ED1-ED7/ED-CROSS 교차 검증)
 
 ---
 

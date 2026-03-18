@@ -4,7 +4,7 @@ Tests verify:
 - Site count per group matches adapter agent definitions
 - Canonical domains are present in each group
 - No duplicate domains across groups
-- Total sites = 121
+- Total sites = 116
 - Distribution output format
 """
 
@@ -33,11 +33,11 @@ class TestSiteGroupCounts:
     def test_multilingual_count_is_77(self, distribute_mod):
         assert len(distribute_mod._FALLBACK_GROUPS["multilingual"]) == 77
 
-    def test_total_sites_is_121(self, distribute_mod):
+    def test_total_sites_is_116(self, distribute_mod):
         total = sum(
             len(sites) for sites in distribute_mod._FALLBACK_GROUPS.values()
         )
-        assert total == 121
+        assert total == 116
 
 
 # ============================================================================
@@ -169,7 +169,7 @@ class TestDistributeOutput:
         from pathlib import Path
         result = distribute_mod.distribute_sites(Path(tmp_path))
         assert result["valid"] is True
-        assert result["total_sites"] == 121
+        assert result["total_sites"] == 116
 
         for group in ["kr-major", "kr-tech", "english", "multilingual"]:
             assert group in result["output_paths"]

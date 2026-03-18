@@ -1,4 +1,4 @@
-"""Site-specific crawling adapters for all 121 news sites.
+"""Site-specific crawling adapters for all 116 news sites.
 
 Adapter hierarchy:
     base_adapter     - Abstract base adapter interface

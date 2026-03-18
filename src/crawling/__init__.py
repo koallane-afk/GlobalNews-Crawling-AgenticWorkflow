@@ -1,6 +1,6 @@
 """Crawling Layer: URL discovery, content extraction, anti-block, deduplication.
 
-Handles parallel crawling of 121 news sites across 10 groups (A-J)
+Handles parallel crawling of 116 news sites across 10 groups (A-J)
 using RSS, Sitemap, API, Playwright, and DOM strategies.
 
 Modules:
@@ -28,8 +28,14 @@ Modules:
 # ---------------------------------------------------------------------------
 from src.crawling.contracts import RawArticle, DiscoveredURL, CrawlResult, compute_content_hash
 from src.crawling.network_guard import NetworkGuard, FetchResponse, RateLimiter
-from src.crawling.url_discovery import URLDiscovery, RSSParser, SitemapParser, DOMNavigator, normalize_url
-from src.crawling.article_extractor import ArticleExtractor, ExtractionResult
+from src.crawling.url_discovery import (
+    URLDiscovery, RSSParser, SitemapParser, DOMNavigator,
+    GoogleNewsDiscovery, GDELTDiscovery, normalize_url,
+)
+from src.crawling.article_extractor import (
+    ArticleExtractor, ExtractionResult, fetch_via_cache_proxies,
+    EXTERNAL_DISCOVERY_METHODS,
+)
 from src.crawling.crawler import Crawler, JSONLWriter, CrawlState
 
 # ---------------------------------------------------------------------------
@@ -85,10 +91,14 @@ __all__ = [
     "RSSParser",
     "SitemapParser",
     "DOMNavigator",
+    "GoogleNewsDiscovery",
+    "GDELTDiscovery",
     "normalize_url",
     # Article Extraction
     "ArticleExtractor",
     "ExtractionResult",
+    "fetch_via_cache_proxies",
+    "EXTERNAL_DISCOVERY_METHODS",
     # Crawler
     "Crawler",
     "JSONLWriter",

@@ -1,7 +1,7 @@
 """Unit tests for generate_sources_yaml_draft.py — Phase B: Sources YAML.
 
 Tests verify:
-- Default site catalog has exactly 121 entries
+- Default site catalog has exactly 116 entries
 - All required fields present per site
 - Sites match distribute_sites_to_teams.py groups
 - YAML generation works
@@ -19,8 +19,8 @@ import pytest
 class TestDefaultSitesCatalog:
     """Verify the _FALLBACK_SITES catalog integrity."""
 
-    def test_total_count_is_121(self, sources_mod):
-        assert len(sources_mod._FALLBACK_SITES) == 121
+    def test_total_count_is_116(self, sources_mod):
+        assert len(sources_mod._FALLBACK_SITES) == 116
 
     def test_all_sites_have_required_fields(self, sources_mod):
         required = {"domain", "name", "language", "crawl_method", "anti_block_tier"}
@@ -94,9 +94,9 @@ class TestLanguageDistribution:
         counts = self._count_by_lang(sources_mod)
         assert counts.get("fr", 0) == 5
 
-    def test_all_languages_sum_to_121(self, sources_mod):
+    def test_all_languages_sum_to_116(self, sources_mod):
         counts = self._count_by_lang(sources_mod)
-        assert sum(counts.values()) == 121
+        assert sum(counts.values()) == 116
 
 
 # ============================================================================
@@ -110,7 +110,7 @@ class TestYamlGeneration:
         from pathlib import Path
         result = sources_mod.generate_sources_yaml(Path(tmp_path))
         assert result["valid"] is True
-        assert result["total_sites"] == 121
+        assert result["total_sites"] == 116
         assert os.path.exists(result["output_path"])
         assert result["output_size_bytes"] > 1000
 

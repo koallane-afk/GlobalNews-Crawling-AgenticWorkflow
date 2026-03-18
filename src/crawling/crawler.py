@@ -487,6 +487,7 @@ class Crawler:
                             source_id=source_id,
                             site_config=site_config,
                             title_hint=url_obj.title_hint,
+                            discovered_via=url_obj.discovered_via,
                         )
                         writer.write_article(article)
                         result.articles.append(article)

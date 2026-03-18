@@ -11,7 +11,7 @@ Output: 4 JSON files in planning/team-input/
     - group-multilingual.json (Groups F-J = 77 Asia-Pacific + Europe/ME + Africa + LatAm + Russia sites)
 
 This is a P1 pre-processing script: deterministic extraction, no LLM inference.
-It divides the 121 target sites into 4 balanced groups for the crawl-strategy-team
+It divides the 116 target sites into 4 balanced groups for the crawl-strategy-team
 (Step 6). Each group file includes per-site metadata and, if available, the
 reconnaissance data from Step 1.
 """
@@ -289,7 +289,7 @@ def _try_enrich_from_sources_yaml(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Split 121 sites into 4 balanced groups for crawl-strategy-team."
+        description="Split 116 sites into 4 balanced groups for crawl-strategy-team."
     )
     parser.add_argument(
         "--project-dir",

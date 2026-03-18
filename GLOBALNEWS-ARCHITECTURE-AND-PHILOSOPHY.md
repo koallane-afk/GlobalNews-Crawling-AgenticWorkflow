@@ -89,12 +89,12 @@ Tier 6: Claude Code 인터랙티브 분석으로 에스컬레이션
 
 **SiteDeadline Fairness Yield 패턴 (ADR-065~067)**:
 
-ThreadPoolExecutor(max_workers=5)에서 121개 사이트를 병렬 크롤링할 때, 한 사이트가 느리거나 차단되면 워커 스레드를 독점하여 다른 사이트의 크롤링이 지연된다. 이를 해결하기 위한 **협력적 공정성 메커니즘**:
+ThreadPoolExecutor(max_workers=5)에서 116개 사이트를 병렬 크롤링할 때, 한 사이트가 느리거나 차단되면 워커 스레드를 독점하여 다른 사이트의 크롤링이 지연된다. 이를 해결하기 위한 **협력적 공정성 메커니즘**:
 
 1. **SiteDeadline 할당**: 각 사이트에 동적 타임아웃(최대 900초) 기반 데드라인 할당
 2. **Fairness Yield**: 데드라인 만료 시 현재 워커를 양보(`break`) — 부분 결과 보존
 3. **재큐잉**: yield된 사이트는 다음 패스에서 새 데드라인과 함께 재시도
-4. **완료까지 반복**: `_get_incomplete_sites()` → `_run_single_pass()` 최대 `MULTI_PASS_MAX_EXTRA`(10)회 반복, 모든 121개 사이트 완료까지. 반복 후에도 미완료 사이트는 `crawl_exhausted_sites.json` 실패 리포트에 기록된다
+4. **완료까지 반복**: `_get_incomplete_sites()` → `_run_single_pass()` 최대 `MULTI_PASS_MAX_EXTRA`(10)회 반복, 모든 116개 사이트 완료까지. 반복 후에도 미완료 사이트는 `crawl_exhausted_sites.json` 실패 리포트에 기록된다
 
 **P1 `deadline_yielded` 플래그**: `CrawlResult.deadline_yielded: bool` 필드가 yield 시점에서 결정론적으로 `True`로 설정된다. 이 플래그는 3곳에서 할루시네이션을 봉쇄한다:
 
@@ -117,9 +117,9 @@ ThreadPoolExecutor(max_workers=5)에서 121개 사이트를 병렬 크롤링할 
 - **DynamicBypassEngine가 지능적으로 대응한다**: 차단 유형을 진단한 뒤 해당 유형에 최적화된 전략부터 시도
 - **24시간 안전 타임아웃**: 전체 파이프라인 수준의 안전망. 정상적으로는 도달하지 않지만, 치명적 hang 방지
 
-### 1.5 121개 사이트 — 왜 이 사이트들인가
+### 1.5 116개 사이트 — 왜 이 사이트들인가
 
-121개 사이트는 10개 그룹(A-J)으로 조직된다:
+116개 사이트는 10개 그룹(A-J)으로 조직된다:
 
 | 그룹 | 지역 | 사이트 수 | 예시 |
 |------|------|----------|------|
@@ -146,7 +146,7 @@ ThreadPoolExecutor(max_workers=5)에서 121개 사이트를 병렬 크롤링할 
 
 **의도적으로 제외한 것들**: 소셜 미디어(X, Reddit — API 비용/TOS), 방송사 웹(KBS, MBC — 동영상 중심), 포털(네이버, 다음 — 재배포 기사 중복)
 
-**P1 사이트 레지스트리 동기화**: `validate_site_registry_sync.py`가 5개 하드코딩된 사이트 리스트(extract_site_urls, split_sites_by_group, validate_site_coverage, distribute_sites_to_teams, sources.yaml)를 교차 검증하여 도메인 정규화(6개 접두어 제거 + 2개 별칭 해소) 후 불일치를 탐지한다. 121개 사이트 간 desync는 silent failure의 근본 원인이다.
+**P1 사이트 레지스트리 동기화**: `validate_site_registry_sync.py`가 5개 하드코딩된 사이트 리스트(extract_site_urls, split_sites_by_group, validate_site_coverage, distribute_sites_to_teams, sources.yaml)를 교차 검증하여 도메인 정규화(6개 접두어 제거 + 2개 별칭 해소) 후 불일치를 탐지한다. 116개 사이트 간 desync는 silent failure의 근본 원인이다.
 
 ### 1.6 56개 분석 기법 — 왜 이렇게 많은가
 
@@ -234,7 +234,7 @@ data/
 │                  │                                          │
 │   ┌──────────────▼──────────────┐                          │
 │   │  Layer 1: CRAWLING ENGINE   │                          │
-│   │  121 adapters + anti-block  │                          │
+│   │  116 adapters + anti-block  │                          │
 │   │  → data/raw/YYYY-MM-DD/    │                          │
 │   └──────────────┬──────────────┘                          │
 │                  │ all_articles.jsonl                       │
@@ -272,7 +272,7 @@ data/
 src/                              (~48,800 LOC)
 ├── config/
 │   └── constants.py              350+ 상수: 경로, 임계값, 스키마
-├── crawling/                     크롤링 엔진 (17 모듈 + 121 어댑터)
+├── crawling/                     크롤링 엔진 (17 모듈 + 116 어댑터)
 │   ├── pipeline.py               크롤링 오케스트레이터 + SiteDeadline + Multi-Pass (~1,200 lines)
 │   ├── network_guard.py          5-retry HTTP 클라이언트 (662 lines)
 │   ├── url_discovery.py          3-Tier URL 발견 (989 lines)
@@ -290,7 +290,7 @@ src/                              (~48,800 LOC)
 │   ├── crawler.py                ENABLED_DEFAULT SOT 소비자 — 사이트별 enabled 상태 런타임 판정
 │   ├── contracts.py              RawArticle + CrawlResult(deadline_yielded) 데이터 계약 (~190 lines)
 │   ├── crawl_report.py           사이트별 리포트 (~200 lines)
-│   └── adapters/                 121개 사이트별 어댑터
+│   └── adapters/                 116개 사이트별 어댑터
 │       ├── base_adapter.py       추상 기반 클래스 (450+ lines)
 │       ├── kr_major/             12: 조선, 중앙, 동아, 한겨레, 연합 등 (Groups A+B+C)
 │       ├── kr_tech/              10: Bloter, 전자신문, ZDNet, Insight 등 (Group D)
@@ -323,14 +323,14 @@ src/                              (~48,800 LOC)
 ### 3.1 크롤링 파이프라인 흐름
 
 ```
-sources.yaml (121 sites)
+sources.yaml (116 sites)
        │
        ▼
 ┌──────────────────────────────────────────────────┐
 │              CrawlingPipeline                     │
 │  ┌────────────┐  ┌───────────────┐               │
 │  │ SiteAdapter │  │ NetworkGuard  │               │
-│  │ (121개)     │  │ (5-retry HTTP)│               │
+│  │ (116개)     │  │ (5-retry HTTP)│               │
 │  └──────┬─────┘  └───────┬───────┘               │
 │         │                │                        │
 │  ┌──────▼────────────────▼───────┐               │
@@ -376,7 +376,7 @@ sources.yaml (121 sites)
 
 ### 3.2 사이트 어댑터 시스템
 
-**설계 철학**: 121개 사이트는 DOM 구조, 인코딩, 페이월, 차단 방식이 모두 다르다. 범용 크롤러로는 높은 수집률을 달성할 수 없다. 따라서 **사이트마다 전용 어댑터**를 구현하되, **공통 로직은 기반 클래스에 집중**시킨다.
+**설계 철학**: 116개 사이트는 DOM 구조, 인코딩, 페이월, 차단 방식이 모두 다르다. 범용 크롤러로는 높은 수집률을 달성할 수 없다. 따라서 **사이트마다 전용 어댑터**를 구현하되, **공통 로직은 기반 클래스에 집중**시킨다.
 
 **기반 클래스** `BaseSiteAdapter` (450+ lines)가 제공하는 것:
 - URL 발견 (RSS/Sitemap/DOM) 공통 로직
@@ -859,7 +859,7 @@ crawl_status     -- site_id + crawl_date + count    — 크롤링 현황
 
 ## 7. 설정 시스템
 
-### 7.1 sources.yaml (121개 사이트)
+### 7.1 sources.yaml (116개 사이트)
 
 각 사이트 설정: meta (name, url, language, group, enabled, difficulty_tier), crawl (primary_method, rss_urls, sections, rate_limit_seconds, ua_tier, anti_block_tier), selectors (title_css, body_css, date_css), paywall (type)
 
@@ -954,7 +954,7 @@ pytest -m "not slow"        # NLP 모델 로딩 제외 (빠른 실행)
 | 변이 | 설명 |
 |------|------|
 | **4-Level 재시도 + Fairness Yield** (D2) | 90회 자동 시도 + DynamicBypassEngine(12전략, 5-Tier) + SiteDeadline Fairness Yield + CRAWL_NEVER_ABANDON Multi-Pass + P1 `deadline_yielded` 할루시네이션 봉쇄 + Tier 7 에스컬레이션 — 부모의 재시도는 10회 |
-| **121-site Adapter Pattern** | 10개 그룹(A-J), 사이트별 전용 어댑터 — 부모에는 없는 도메인 패턴 |
+| **116-site Adapter Pattern** | 10개 그룹(A-J), 사이트별 전용 어댑터 — 부모에는 없는 도메인 패턴 |
 | **5-Layer Signal Hierarchy** | Fad→Short→Mid→Long→Singularity — 뉴스 도메인 고유 |
 | **Date-Partitioned Storage** | YYYY-MM-DD 디렉터리 구조 — 시계열 분석 전제 |
 | **Conductor Pattern** (C2) | Claude Code → Python → Bash → 결과 읽기 — C1 제약 대응 |
@@ -981,7 +981,7 @@ pytest -m "not slow"        # NLP 모델 로딩 제외 (빠른 실행)
 | tech-validation-team | dep-validator, nlp-benchmarker, memory-profiler | 기술 검증 |
 | crawl-strategy-team | 4개 지역별 전략가 | 크롤링 전략 수립 |
 | crawl-engine-team | crawler-core-dev, anti-block-dev, dedup-dev, ua-rotation-dev | 크롤링 엔진 구현 |
-| site-adapters-team | 4개 어댑터 개발자 | 121개 사이트 어댑터 |
+| site-adapters-team | 4개 어댑터 개발자 | 116개 사이트 어댑터 |
 | analysis-foundation-team | preprocessing-dev, feature-extraction-dev, article-analysis-dev, aggregation-dev | Stage 1-4 구현 |
 | analysis-signal-team | timeseries-dev, cross-analysis-dev, signal-classifier-dev, storage-dev | Stage 5-8 구현 |
 
@@ -1000,9 +1000,9 @@ pytest -m "not slow"        # NLP 모델 로딩 제외 (빠른 실행)
 | 시기 | 내용 | 영향 |
 |------|------|------|
 | ADR-054~057 | 페이월 바이패스 시스템 (BrowserRenderer + AdaptiveExtractor + is_paywall_body) | 하드 페이월 5곳 대응 |
-| ADR-060~063 | 44→121 사이트 확장 + DynamicBypassEngine + P1 레지스트리 검증 | 크롤링 커버리지 3x 확대 |
+| ADR-060~063 | 44→121→116 사이트 확장 + DynamicBypassEngine + P1 레지스트리 검증 | 크롤링 커버리지 확대 |
 | ADR-064 | D-7 Instance 13: ENABLED_DEFAULT SOT 중앙화 + AST 교차 검증(ED1-ED7) + `validate_enabled_default_sync.py` P1 스크립트 + `crawler.py` SOT 소비자 추가 | 사이트 활성화 상태 불일치 근절 |
-| ADR-065~067 | SiteDeadline Fairness Yield + P1 `deadline_yielded` 플래그 + CRAWL_NEVER_ABANDON Multi-Pass + CrawlState-first 완료 판정 + MAX_ARTICLES 1000→5000 | **크롤링 절대 원칙 실현** — 121개 사이트 완벽한 크롤링 완수 보장 |
+| ADR-065~067 | SiteDeadline Fairness Yield + P1 `deadline_yielded` 플래그 + CRAWL_NEVER_ABANDON Multi-Pass + CrawlState-first 완료 판정 + MAX_ARTICLES 1000→5000 | **크롤링 절대 원칙 실현** — 116개 사이트 완벽한 크롤링 완수 보장 |
 | Post-ADR-067 | Bypass Discovery Fallback + Producer-Consumer 계약 정합 + P1 로그 포맷 봉쇄 + `무한 while-loop` → 바운디드 `MULTI_PASS_MAX_EXTRA=10` 루프 + `crawl_exhausted_sites.json` 실패 리포트 + `check_crawl_progress.py` SOT 재사용(config_loader, constants.py 임포트) | P1 할루시네이션 봉쇄 — 하드코딩·로직 중복 근절 |
 
 ### 12.4 구축 규모
@@ -1028,5 +1028,5 @@ pytest -m "not slow"        # NLP 모델 로딩 제외 (빠른 실행)
 | [GLOBALNEWS-README.md](GLOBALNEWS-README.md) | 시스템 개요, 빠른 시작, 실행 결과 |
 | [GLOBALNEWS-USER-MANUAL.md](GLOBALNEWS-USER-MANUAL.md) | 일상 운영 가이드 |
 | [prompt/workflow.md](prompt/workflow.md) | 20단계 워크플로우 설계도 (구축 과정 기록) |
-| [config/sources.yaml](config/sources.yaml) | 121개 사이트 설정 |
+| [config/sources.yaml](config/sources.yaml) | 116개 사이트 설정 |
 | [AGENTICWORKFLOW-ARCHITECTURE-AND-PHILOSOPHY.md](AGENTICWORKFLOW-ARCHITECTURE-AND-PHILOSOPHY.md) | 부모 프레임워크 아키텍처 |

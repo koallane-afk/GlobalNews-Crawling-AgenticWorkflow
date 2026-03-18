@@ -11,6 +11,12 @@ renderer is attempted first (fresh browser context, no cookies) to bypass
 metered paywalls. If rendering fails or content is still paywalled,
 falls back to title-only extraction.
 
+For URLs discovered via external services (Google News, GDELT) that return
+403 on direct fetch, a cache/proxy extraction fallback chain is available:
+    1. Google AMP CDN: cdn.ampproject.org/c/s/{url_without_scheme}
+    2. Google Cache: webcache.googleusercontent.com/search?q=cache:{url}
+    3. archive.today: archive.today/newest/{url}
+
 Reference:
     Step 5 Architecture Blueprint, Section 4.2 (RawArticle contract).
     Step 6 Crawling Strategies (per-site extraction configurations).
@@ -956,6 +962,207 @@ def _parse_date_string(date_str: str) -> datetime | None:
 
 
 # ---------------------------------------------------------------------------
+# Cache / Proxy Extraction Fallback (for 403-blocked URLs)
+# ---------------------------------------------------------------------------
+
+# Timeout for cache/proxy fetches (seconds).
+# These are external services so we use a moderate timeout.
+_CACHE_PROXY_TIMEOUT = 20
+
+# Discovery methods that indicate the URL was found via an external service
+# and may not be directly accessible from our IP.
+EXTERNAL_DISCOVERY_METHODS = frozenset({"google_news", "gdelt"})
+
+
+def _fetch_via_google_amp(url: str, timeout: float = _CACHE_PROXY_TIMEOUT) -> str | None:
+    """Attempt to fetch article HTML via Google's AMP CDN.
+
+    Google AMP caches article content and serves it from Google's servers,
+    bypassing the origin site's WAF. Only works for sites that have AMP
+    versions of their articles.
+
+    Constructs: https://cdn.ampproject.org/c/s/{url_without_scheme}
+
+    Args:
+        url: Original article URL.
+        timeout: HTTP request timeout.
+
+    Returns:
+        HTML content string, or None if fetch fails or content is empty.
+    """
+    from urllib.parse import urlparse as _urlparse
+    parsed = _urlparse(url)
+    if not parsed.hostname:
+        return None
+
+    # Strip scheme, keep host + path + query
+    url_without_scheme = url.split("://", 1)[-1]
+    amp_url = f"https://cdn.ampproject.org/c/s/{url_without_scheme}"
+
+    return _fetch_cache_url(amp_url, "google_amp", timeout)
+
+
+def _fetch_via_google_cache(url: str, timeout: float = _CACHE_PROXY_TIMEOUT) -> str | None:
+    """Attempt to fetch article HTML via Google's web cache.
+
+    Google Cache stores snapshots of pages from its index. This works
+    for pages that Google has recently crawled, even if the origin site
+    now blocks our requests.
+
+    Constructs: https://webcache.googleusercontent.com/search?q=cache:{url}
+
+    Args:
+        url: Original article URL.
+        timeout: HTTP request timeout.
+
+    Returns:
+        HTML content string, or None if fetch fails or content is empty.
+    """
+    import urllib.parse
+    encoded_url = urllib.parse.quote(url, safe="")
+    cache_url = f"https://webcache.googleusercontent.com/search?q=cache:{encoded_url}"
+
+    return _fetch_cache_url(cache_url, "google_cache", timeout)
+
+
+def _fetch_via_archive_today(url: str, timeout: float = _CACHE_PROXY_TIMEOUT) -> str | None:
+    """Attempt to fetch article HTML via archive.today.
+
+    archive.today (formerly archive.is) creates snapshots of web pages.
+    The /newest/ endpoint redirects to the most recent snapshot.
+
+    Constructs: https://archive.today/newest/{url}
+
+    Args:
+        url: Original article URL.
+        timeout: HTTP request timeout.
+
+    Returns:
+        HTML content string, or None if fetch fails or content is empty.
+    """
+    archive_url = f"https://archive.today/newest/{url}"
+
+    return _fetch_cache_url(archive_url, "archive_today", timeout)
+
+
+def _fetch_cache_url(
+    cache_url: str,
+    service_name: str,
+    timeout: float,
+) -> str | None:
+    """Fetch HTML from a cache/proxy URL.
+
+    Uses curl_cffi (with Chrome impersonation) for best compatibility,
+    falls back to urllib if curl_cffi is not available.
+
+    IMPORTANT: Does NOT use NetworkGuard -- these are external services
+    that should not be affected by the target site's circuit breaker.
+
+    Args:
+        cache_url: Full URL of the cache/proxy endpoint.
+        service_name: Name for logging (e.g., "google_amp").
+        timeout: HTTP request timeout.
+
+    Returns:
+        HTML content string, or None on any failure.
+    """
+    # Try curl_cffi first
+    try:
+        from curl_cffi import requests as curl_requests
+        resp = curl_requests.get(
+            cache_url,
+            timeout=timeout,
+            impersonate="chrome",
+            allow_redirects=True,
+        )
+        if resp.status_code == 200 and resp.text and len(resp.text) > 200:
+            logger.info(
+                "cache_proxy_fetch_ok service=%s url=%s content_len=%d",
+                service_name, cache_url[:100], len(resp.text),
+            )
+            return resp.text
+        logger.debug(
+            "cache_proxy_fetch_empty service=%s url=%s status=%s len=%d",
+            service_name, cache_url[:100], resp.status_code,
+            len(resp.text) if resp.text else 0,
+        )
+        return None
+    except ImportError:
+        pass
+    except Exception as e:
+        logger.debug(
+            "cache_proxy_curl_error service=%s url=%s error=%s",
+            service_name, cache_url[:100], str(e),
+        )
+
+    # Fallback to urllib
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            cache_url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/html,application/xhtml+xml,*/*",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                html = resp.read().decode("utf-8", errors="replace")
+                if html and len(html) > 200:
+                    logger.info(
+                        "cache_proxy_urllib_ok service=%s url=%s len=%d",
+                        service_name, cache_url[:100], len(html),
+                    )
+                    return html
+        return None
+    except Exception as e:
+        logger.debug(
+            "cache_proxy_urllib_error service=%s url=%s error=%s",
+            service_name, cache_url[:100], str(e),
+        )
+        return None
+
+
+def fetch_via_cache_proxies(url: str) -> tuple[str | None, str]:
+    """Try to fetch article HTML via cache/proxy services.
+
+    Tries each service in order: Google AMP -> Google Cache -> archive.today.
+    Returns on the first successful fetch.
+
+    Args:
+        url: Original article URL.
+
+    Returns:
+        Tuple of (html_content, service_name) where html_content is the
+        fetched HTML or None if all services failed, and service_name is
+        the name of the service that succeeded (or "" if none).
+    """
+    services = [
+        (_fetch_via_google_amp, "google_amp"),
+        (_fetch_via_google_cache, "google_cache"),
+        (_fetch_via_archive_today, "archive_today"),
+    ]
+
+    for fetch_fn, name in services:
+        try:
+            html = fetch_fn(url)
+            if html:
+                return html, name
+        except Exception as e:
+            logger.debug(
+                "cache_proxy_service_error service=%s url=%s error=%s",
+                name, url[:100], str(e),
+            )
+            continue
+
+    return None, ""
+
+
+# ---------------------------------------------------------------------------
 # ArticleExtractor
 # ---------------------------------------------------------------------------
 
@@ -994,11 +1201,17 @@ class ArticleExtractor:
         site_config: dict[str, Any],
         html: str | None = None,
         title_hint: str | None = None,
+        discovered_via: str = "",
     ) -> RawArticle:
         """Extract article content from a URL.
 
         If ``html`` is provided, it is used directly. Otherwise the page is
-        fetched via NetworkGuard.
+        fetched via NetworkGuard. If the direct fetch fails with a 403/block
+        error and the URL was discovered via an external service (Google News
+        or GDELT), cache/proxy extraction is attempted automatically:
+            1. Google AMP CDN
+            2. Google Cache
+            3. archive.today
 
         The extraction chain tries each method in order:
         1. Fundus (if available and the site is supported)
@@ -1011,13 +1224,16 @@ class ArticleExtractor:
             site_config: Site configuration from sources.yaml.
             html: Pre-fetched HTML content. If None, the page is fetched.
             title_hint: Title from RSS feed to use as fallback.
+            discovered_via: How the URL was discovered (e.g., "rss", "google_news",
+                "gdelt"). Used to decide whether cache proxy fallback is appropriate.
 
         Returns:
             RawArticle with extracted content.
 
         Raises:
             ParseError: If no extraction method can extract the title.
-            NetworkError: If the page cannot be fetched and no html is provided.
+            NetworkError: If the page cannot be fetched and no html is provided
+                (and cache proxy fallback either failed or was not attempted).
         """
         extraction = site_config.get("extraction", {})
         is_hard_paywall = extraction.get("paywall_type") == "hard"
@@ -1025,6 +1241,8 @@ class ArticleExtractor:
         source_name = site_config.get("name", source_id)
         language = site_config.get("language", "en")
         charset = extraction.get("charset", "utf-8")
+        used_cache_proxy = False
+        cache_proxy_service = ""
 
         # Fetch HTML if not provided
         if html is None:
@@ -1036,9 +1254,47 @@ class ArticleExtractor:
                 else:
                     response = self._guard.fetch(url, site_id=source_id)
                 html = response.text
-            except NetworkError as e:
-                logger.error("article_fetch_failed url=%s source_id=%s error=%s", url, source_id, str(e))
-                raise
+            except (NetworkError, Exception) as e:
+                # If fetch failed and the URL was discovered via an external
+                # service (Google News / GDELT), try cache/proxy extraction
+                # before giving up. The URL is known to exist (the external
+                # service indexed it) but we cannot reach the origin site.
+                #
+                # For URLs from normal discovery (RSS, sitemap, DOM), we
+                # let the error propagate so the anti-block escalation
+                # system can handle it through its own retry chain.
+                if discovered_via in EXTERNAL_DISCOVERY_METHODS:
+                    logger.info(
+                        "article_fetch_blocked_trying_cache url=%s source_id=%s "
+                        "discovered_via=%s error=%s",
+                        url, source_id, discovered_via, str(e),
+                    )
+                    cached_html, cache_proxy_service = fetch_via_cache_proxies(url)
+                    if cached_html:
+                        html = cached_html
+                        used_cache_proxy = True
+                        logger.info(
+                            "cache_proxy_extraction_success url=%s source_id=%s "
+                            "service=%s content_len=%d",
+                            url, source_id, cache_proxy_service, len(html),
+                        )
+                    else:
+                        logger.warning(
+                            "cache_proxy_extraction_failed url=%s source_id=%s "
+                            "all_services_exhausted=true",
+                            url, source_id,
+                        )
+                        raise NetworkError(
+                            f"Direct fetch and all cache proxies failed for {url}",
+                            status_code=getattr(e, "status_code", None),
+                            url=url,
+                        )
+                else:
+                    logger.error(
+                        "article_fetch_failed url=%s source_id=%s error=%s",
+                        url, source_id, str(e),
+                    )
+                    raise
 
         # For hard-paywall / title-only sites, attempt browser rendering first
         if is_title_only or is_hard_paywall:
@@ -1138,10 +1394,16 @@ class ArticleExtractor:
         # Detect paywall truncation for soft-metered sites
         is_paywall = extraction.get("paywall_type", "none") != "none"
 
+        # Determine crawl method -- include cache proxy info if used
+        crawl_method = discovered_via if discovered_via else "rss"
+        if used_cache_proxy and cache_proxy_service:
+            crawl_method = f"{crawl_method}+{cache_proxy_service}"
+
         return result.to_raw_article(
             source_id=source_id,
             source_name=source_name,
             is_paywall=is_paywall,
+            crawl_method=crawl_method,
         )
 
     def _try_extraction_chain(

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Distribute 121 sites to 4 adapter-dev team members.
+"""Distribute 116 sites to 4 adapter-dev team members.
 
 Usage: python3 scripts/distribute_sites_to_teams.py --project-dir .
 
@@ -502,10 +502,10 @@ def distribute_sites(project_dir: Path) -> dict:
         "warnings": warnings,
     }
 
-    # Warn if total does not match expected 121
-    if total_sites != 121:
+    # Warn if total does not match expected 116
+    if total_sites != 116:
         result["warnings"].append(
-            f"Expected 121 total sites but distributed {total_sites}."
+            f"Expected 116 total sites but distributed {total_sites}."
         )
 
     return result
@@ -517,7 +517,7 @@ def distribute_sites(project_dir: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Distribute 121 sites to 4 adapter-dev team members."
+        description="Distribute 116 sites to 4 adapter-dev team members."
     )
     parser.add_argument(
         "--project-dir",

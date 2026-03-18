@@ -2,7 +2,7 @@
 """Structural E2E Validation for GlobalNews Crawling & Analysis System.
 
 Performs comprehensive structural checks WITHOUT network access:
-  1. All 121 adapters importable with required methods
+  1. All 116 adapters importable with required methods
   2. main.py dry-run modes operational
   3. All 8 analysis stages importable with correct class names
   4. Pipeline orchestration wired correctly
@@ -200,9 +200,9 @@ class StructuralValidator:
                 clear_config_cache()
                 self._sources_config = load_sources_config(validate=False)
                 sources = self._sources_config.get("sources", {})
-                if len(sources) != 121:
+                if len(sources) != 116:
                     errors.append(
-                        f"sources.yaml has {len(sources)} sites, expected 121"
+                        f"sources.yaml has {len(sources)} sites, expected 116"
                     )
             except Exception as e:
                 errors.append(f"sources.yaml parse error: {e}")
@@ -223,13 +223,13 @@ class StructuralValidator:
             check.details = "; ".join(errors)
         else:
             check.status = "PASS"
-            check.details = "Both config files present and parseable, 121 sites configured"
+            check.details = "Both config files present and parseable, 116 sites configured"
 
         check.elapsed_seconds = round(time.monotonic() - t0, 3)
         self.checks.append(check)
 
     def _check_adapter_imports(self) -> None:
-        """V2: Import the adapter registry and verify 121 adapters."""
+        """V2: Import the adapter registry and verify 116 adapters."""
         t0 = time.monotonic()
         check = CheckResult(
             check_id="ADP_001",
@@ -241,13 +241,13 @@ class StructuralValidator:
             self._adapter_registry = ADAPTER_REGISTRY
             count = len(ADAPTER_REGISTRY)
 
-            if count == 121:
+            if count == 116:
                 check.status = "PASS"
-                check.details = f"121 adapters registered: {', '.join(sorted(ADAPTER_REGISTRY.keys()))}"
+                check.details = f"116 adapters registered: {', '.join(sorted(ADAPTER_REGISTRY.keys()))}"
             else:
                 check.status = "FAIL"
                 check.details = (
-                    f"Expected 121 adapters, got {count}: "
+                    f"Expected 116 adapters, got {count}: "
                     f"{', '.join(sorted(ADAPTER_REGISTRY.keys()))}"
                 )
         except Exception as e:
@@ -262,7 +262,7 @@ class StructuralValidator:
         t0 = time.monotonic()
         check = CheckResult(
             check_id="ADP_002",
-            description="Per-site adapter interface validation (121 sites)",
+            description="Per-site adapter interface validation (116 sites)",
         )
 
         from src.crawling.adapters import get_adapter, ADAPTER_REGISTRY
@@ -922,9 +922,9 @@ class StructuralValidator:
         return [
             {
                 "id": "V1",
-                "criterion": "Full crawl on 121 sites",
+                "criterion": "Full crawl on 116 sites",
                 "validation_type": "STRUCTURAL",
-                "status": "PASS" if pass_sites == 121 else "PARTIAL",
+                "status": "PASS" if pass_sites == 116 else "PARTIAL",
                 "notes": f"{pass_sites}/{total_sites} adapters structurally valid",
             },
             {
@@ -1182,7 +1182,7 @@ def generate_report_md(results: dict[str, Any], output_path: Path) -> None:
         rec_num += 1
         lines.append(
             f"{rec_num}. **Fix {len(fail_sites)} adapter failures**: "
-            "Ensure all 121 adapters have SITE_ID, SITE_NAME, SITE_URL, "
+            "Ensure all 116 adapters have SITE_ID, SITE_NAME, SITE_URL, "
             "LANGUAGE, GROUP class attributes and implement extract_article() "
             "and get_section_urls() methods."
         )

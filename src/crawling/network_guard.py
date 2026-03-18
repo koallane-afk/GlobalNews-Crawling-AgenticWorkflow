@@ -133,7 +133,7 @@ class RateLimiter:
 # ---------------------------------------------------------------------------
 
 # Non-retriable HTTP status codes -- request will not be retried
-NON_RETRIABLE_STATUS_CODES = frozenset({400, 401, 403, 404, 405, 410, 451})
+NON_RETRIABLE_STATUS_CODES = frozenset({400, 401, 404, 405, 410, 451})
 
 # Retriable status codes imported from constants: {429, 500, 502, 503, 504}
 RETRIABLE_STATUS_CODES = RETRY_STATUS_CODES
@@ -559,8 +559,15 @@ class NetworkGuard:
                 retry_after=retry_seconds,
             )
 
-        # Bot detection patterns in 403/503
-        if status in (403, 503):
+        # 403 from news sites is always a bot block — route to escalation
+        if status == 403:
+            raise BlockDetectedError(
+                f"HTTP 403 at {url} — likely bot block",
+                block_type="ip_block",
+            )
+
+        # Bot detection patterns in 503
+        if status == 503:
             body_lower = response.text.lower() if response.text else ""
             block_indicators = [
                 "captcha", "cloudflare", "please verify",

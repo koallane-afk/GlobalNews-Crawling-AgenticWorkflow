@@ -90,8 +90,8 @@ class TestDistributeVsSources:
         assert not missing_in_distribute, \
             f"In sources SOT but not in distribute SOT: {missing_in_distribute}"
 
-    def test_sot_derived_total_121(self, sources_mod, project_root):
-        """P1: SOT-derived catalog must have exactly 121 sites."""
+    def test_sot_derived_total_116(self, sources_mod, project_root):
+        """P1: SOT-derived catalog must have exactly 116 sites."""
         from pathlib import Path
         project_path = Path(project_root)
         sot_path = project_path / "data" / "config" / "sources.yaml"
@@ -99,7 +99,7 @@ class TestDistributeVsSources:
             pytest.skip("Runtime SOT not available")
 
         src_sites = sources_mod.get_site_catalog(project_path)
-        assert len(src_sites) == 121
+        assert len(src_sites) == 116
 
 
 # ============================================================================
@@ -135,7 +135,7 @@ class TestScriptToAgentConsistency:
         assert len(distribute_mod._FALLBACK_GROUPS["multilingual"]) == 77
 
     def test_sot_group_counts(self, distribute_mod, project_root):
-        """P1: SOT-derived group counts must sum to 121."""
+        """P1: SOT-derived group counts must sum to 116."""
         from pathlib import Path
         project_path = Path(project_root)
         sot_path = project_path / "data" / "config" / "sources.yaml"
@@ -144,7 +144,7 @@ class TestScriptToAgentConsistency:
 
         groups = distribute_mod.get_site_groups(project_path)
         total = sum(len(v) for v in groups.values())
-        assert total == 121, f"SOT-derived groups total {total}, expected 121"
+        assert total == 116, f"SOT-derived groups total {total}, expected 116"
 
 
 # ============================================================================
@@ -259,12 +259,12 @@ class TestRuntimeSOTSync:
         assert not extra_adapters, \
             f"Adapter exists but not in SOT: {sorted(extra_adapters)}"
 
-    def test_sot_has_121_sites(self, sot_site_ids):
-        """Runtime SOT should have exactly 121 sites."""
-        assert len(sot_site_ids) == 121, \
-            f"SOT has {len(sot_site_ids)} sites, expected 121"
+    def test_sot_has_116_sites(self, sot_site_ids):
+        """Runtime SOT should have exactly 116 sites."""
+        assert len(sot_site_ids) == 116, \
+            f"SOT has {len(sot_site_ids)} sites, expected 116"
 
-    def test_adapter_registry_has_121_sites(self, adapter_registry_ids):
-        """ADAPTER_REGISTRY should have exactly 121 site_ids."""
-        assert len(adapter_registry_ids) == 121, \
-            f"ADAPTER_REGISTRY has {len(adapter_registry_ids)} site_ids, expected 121"
+    def test_adapter_registry_has_116_sites(self, adapter_registry_ids):
+        """ADAPTER_REGISTRY should have exactly 116 site_ids."""
+        assert len(adapter_registry_ids) == 116, \
+            f"ADAPTER_REGISTRY has {len(adapter_registry_ids)} site_ids, expected 116"

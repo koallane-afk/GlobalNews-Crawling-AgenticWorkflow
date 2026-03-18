@@ -886,7 +886,7 @@
 - **날짜**: 2026-03-11
 - **상태**: Accepted
 - **맥락**: 초기 44개 사이트(Groups A-G)는 주요 4대 권역을 커버했으나, 아프리카·라틴아메리카·러시아/중앙아시아가 누락되어 교차 문화 분석의 편향이 존재했다.
-- **결정**: 77개 사이트를 추가하여 총 121개 사이트(10개 그룹)으로 확장한다.
+- **결정**: 77개 사이트를 추가하여 총 121개 사이트(10개 그룹)으로 확장한다. (이후 비활성 사이트 정리로 116개로 조정)
   - Group H (아프리카, 4): AllAfrica, Africanews, TheAfricaReport, Panapress
   - Group I (라틴 아메리카, 8): Clarin, LaNacion, Folha, OGlobo, ElMercurio, BioBioChile, ElTiempo, ElComercio
   - Group J (러시아/중앙아시아, 4): GoGo Mongolia, RIA, RG, RBC
@@ -898,12 +898,12 @@
 
 - **날짜**: 2026-03-11
 - **상태**: Accepted
-- **맥락**: 121개 사이트 리스트가 5개 파일에 하드코딩되어 있으며, 한 파일의 사이트 추가/삭제가 다른 파일에 전파되지 않으면 silent failure가 발생한다. 실제로 사이트 desync 버그가 이 테스트 스위트의 개발 동기였다.
+- **맥락**: 116개 사이트 리스트가 5개 파일에 하드코딩되어 있으며, 한 파일의 사이트 추가/삭제가 다른 파일에 전파되지 않으면 silent failure가 발생한다. 실제로 사이트 desync 버그가 이 테스트 스위트의 개발 동기였다.
 - **결정**: `validate_site_registry_sync.py` P1 검증 스크립트를 신규 생성하여 5개 소스의 도메인 리스트를 교차 검증한다.
   - RS1: 모든 소스 쌍의 정규화된 도메인 집합 동일성
   - RS2: 그룹별 카운트 정합성 (kr-major=12, kr-tech=10, english=22, multilingual=77)
   - RS3: 런타임 SOT(sources.yaml) 정합성 (선택적)
-  - RS4: 총 카운트 = 121
+  - RS4: 총 카운트 = 116
 - **근거**: 도메인 정규화(`normalize_domain()`)가 6개 접두어(www, en, e, news, digital, mongolia, edition)를 제거하고 2개 별칭(huffpost↔huffingtonpost, taiwannews.com.tw↔taiwannews.com)을 해소하여, 파일별 표기 차이를 흡수한다.
 - **대안**: 단일 파일에서 동적 생성 → 기각 (5개 파일은 각각 다른 문맥에서 독립 사용되므로 D-7 패턴이 적절)
 - **테스트**: `tests/structural/test_d7_sync.py::TestSiteRegistrySync` (2 tests) + `tests/structural/test_site_consistency.py` (10+ tests)
@@ -912,7 +912,7 @@
 
 - **날짜**: 2026-03-11
 - **상태**: Accepted
-- **맥락**: 기존 anti_block.py의 6-Tier 에스컬레이션은 차단 유형을 고려하지 않는 선형 에스컬레이션이었다. 121개 사이트로 확장하면서 차단 유형별 최적 전략이 필요해졌다.
+- **맥락**: 기존 anti_block.py의 6-Tier 에스컬레이션은 차단 유형을 고려하지 않는 선형 에스컬레이션이었다. 116개 사이트로 확장하면서 차단 유형별 최적 전략이 필요해졌다.
 - **결정**: `DynamicBypassEngine`(dynamic_bypass.py)을 도입하여 차단 유형(7 BlockTypes)에 따라 최적 전략을 5-Tier(T0-T4)로 자동 에스컬레이션한다.
   - 12개 전략: rotate_user_agent, exponential_backoff, stealth_headers, proxy_rotation, browser_rendering, captcha_solver, javascript_rendering, fingerprint_randomization, session_rotation, residential_proxy, distributed_crawling, human_simulation
   - Never-Abandon 루프: Phase A (DynamicBypassEngine) → Phase B (TotalWar fallback)
@@ -951,7 +951,7 @@
 
 - **날짜**: 2026-03-13
 - **상태**: Accepted
-- **맥락**: 기존 SiteDeadline은 제출 시점(submit-time)에 생성되어 ThreadPoolExecutor 대기 시간이 포함되었고, 만료 시 크롤링을 영구 중단했다. 이는 121개 사이트 중 느린 사이트가 영구적으로 포기되는 치명적 결함이었다.
+- **맥락**: 기존 SiteDeadline은 제출 시점(submit-time)에 생성되어 ThreadPoolExecutor 대기 시간이 포함되었고, 만료 시 크롤링을 영구 중단했다. 이는 116개 사이트 중 느린 사이트가 영구적으로 포기되는 치명적 결함이었다.
 - **결정**: SiteDeadline을 **실행 시점(execution-time)에 생성**하고, 만료 시 **Fairness Yield** 패턴을 적용한다 — 워커를 양보(`break`)하여 다른 대기 사이트에 배분하고, 부분 결과를 보존하며, 해당 사이트를 다음 패스에서 새 데드라인과 함께 재시도한다.
 - **근거**:
   - **Renew vs Yield 트레이드오프**: 초기에는 만료 시 자동 갱신(renew)을 구현했으나, 30년차 시니어 아키텍트 관점에서 성찰한 결과, renew는 느린 사이트가 워커를 독점하여 116+ 사이트가 대기하는 **워커 독점 문제**를 유발. Yield가 협력적 공정성을 보장.

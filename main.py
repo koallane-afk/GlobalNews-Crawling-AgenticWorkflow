@@ -1,6 +1,6 @@
 """GlobalNews Crawling & Analysis System -- Main Entry Point.
 
-A staged monolith that crawls 121 international news sites through
+A staged monolith that crawls 116 international news sites through
 an 8-stage NLP analysis pipeline, producing Parquet/SQLite output
 for social trend research.
 
@@ -449,7 +449,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="main.py",
         description="GlobalNews Crawling & Analysis System -- "
-                    "Crawl 121 news sites, analyze through 8-stage NLP pipeline, "
+                    "Crawl 116 news sites, analyze through 8-stage NLP pipeline, "
                     "produce Parquet/SQLite output for social trend research.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\

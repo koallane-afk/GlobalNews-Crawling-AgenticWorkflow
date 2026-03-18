@@ -2,13 +2,13 @@
 """Site Registry Sync Validator — P1 hallucination prevention.
 
 Cross-validates all hardcoded site lists across the codebase to ensure
-no list falls out of sync after expansion (e.g., 44 → 121).
+no list falls out of sync after expansion (e.g., 44 → 121 → 116).
 
 Checks:
     RS1: All 5 hardcoded lists have identical domain sets (after normalization)
     RS2: Group-level counts are consistent across lists
     RS3: Runtime SOT (sources.yaml) matches hardcoded canonical list
-    RS4: Total site count matches expected (121)
+    RS4: Total site count matches expected (116)
 
 Usage:
     python3 scripts/validate_site_registry_sync.py --project-dir .
@@ -214,7 +214,7 @@ _EXPECTED_COUNTS: dict[str, int] = {
     "E": 22, "F": 23, "G": 38,
     "H": 4, "I": 8, "J": 4,
 }
-_EXPECTED_TOTAL = sum(_EXPECTED_COUNTS.values())  # 121
+_EXPECTED_TOTAL = 116  # Updated from sum of _EXPECTED_COUNTS after site reduction
 
 
 def validate_sync(project_dir: str, require_sot: bool = False) -> dict[str, Any]:

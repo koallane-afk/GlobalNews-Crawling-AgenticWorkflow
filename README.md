@@ -1,6 +1,6 @@
 # GlobalNews — 뉴스 크롤링 & 빅데이터 분석 시스템
 
-> **121개 국제 뉴스 사이트 자동 수집 → 56개 NLP 분석 기법 → 5-Layer 신호 분류 → Parquet/SQLite 출력**
+> **116개 국제 뉴스 사이트 자동 수집 → 56개 NLP 분석 기법 → 5-Layer 신호 분류 → Parquet/SQLite 출력**
 
 | 항목 | 내용 |
 |------|------|
@@ -55,7 +55,7 @@ python3 main.py --mode crawl --groups A,B              # 특정 그룹만
 
 ## 시스템 개요
 
-### 121개 뉴스 사이트 (10개 그룹, 14+ 언어)
+### 116개 뉴스 사이트 (10개 그룹, 14+ 언어)
 
 | 그룹 | 지역 | 사이트 수 | 예시 |
 |------|------|----------|------|
@@ -103,13 +103,13 @@ GlobalNews-Crawling-AgenticWorkflow/
 ├── dashboard.py                 ← Streamlit 대시보드 (6개 탭)
 │
 ├── src/                         ← 핵심 소스 코드 (171개 모듈, ~48,800 LOC)
-│   ├── crawling/                ← 크롤링 엔진 (121개 어댑터 + 안티블록 + DynamicBypassEngine + 페이월 바이패스 + Never-Abandon Multi-Pass)
+│   ├── crawling/                ← 크롤링 엔진 (116개 어댑터 + 안티블록 + DynamicBypassEngine + 페이월 바이패스 + Never-Abandon Multi-Pass)
 │   ├── analysis/                ← 8단계 NLP 파이프라인
 │   ├── storage/                 ← Parquet + SQLite I/O
 │   └── utils/                   ← 로깅, 설정, 에러 처리
 │
 ├── config/                      ← 설정 파일
-│   ├── sources.yaml             (121개 사이트)
+│   ├── sources.yaml             (116개 사이트)
 │   ├── review-focus.yaml        (단계별 리뷰 집중 영역 — Framework config)
 │   ├── output-structure.yaml    (단계별 산출물 구조 패턴 — Framework config)
 │   └── crontab.txt              (cron 설정 템플릿)
@@ -198,7 +198,7 @@ df.groupby('topic_label')['sentiment_score'].mean().sort_values()
 | Safety Hooks | 위험 명령·시크릿·SQL 차단(exit 2) + 시크릿 출력 감지(경고) + TDD 보호 + 예측적 디버깅 |
 | Context Preservation | 스냅샷 + Knowledge Archive + RLM 복원 + Learned Patterns 표면화 + Phase-Aware Compact + Retry Progress Circuit Breaker |
 
-**도메인 고유 변이**: 4-Level 재시도 (90회, Circuit Breaker 무진전 감지 포함), 121-site Adapter Pattern (10 Groups, A-J), DynamicBypassEngine (12전략, 5-Tier, 7 BlockTypes) + Never-Abandon 루프, **SiteDeadline Fairness Yield** (데드라인 만료 시 워커 양보 → 재큐잉 → 최대 `MULTI_PASS_MAX_EXTRA`(10)회 반복, P1 `deadline_yielded` 플래그로 false completion 봉쇄), **CRAWL_NEVER_ABANDON Multi-Pass**, 5-Layer Signal Hierarchy, Date-Partitioned Storage, HQ Gates (4종 Human-step 품질 검증), Paywall Bypass System (BrowserRenderer + AdaptiveExtractor + is_paywall_body 영어/프랑스어 26패턴), SM5 Quality Gate Evidence Guard, P1 사이트 레지스트리 교차 검증
+**도메인 고유 변이**: 4-Level 재시도 (90회, Circuit Breaker 무진전 감지 포함), 116-site Adapter Pattern (10 Groups, A-J), DynamicBypassEngine (12전략, 5-Tier, 7 BlockTypes) + Never-Abandon 루프, **SiteDeadline Fairness Yield** (데드라인 만료 시 워커 양보 → 재큐잉 → 최대 `MULTI_PASS_MAX_EXTRA`(10)회 반복, P1 `deadline_yielded` 플래그로 false completion 봉쇄), **CRAWL_NEVER_ABANDON Multi-Pass**, 5-Layer Signal Hierarchy, Date-Partitioned Storage, HQ Gates (4종 Human-step 품질 검증), Paywall Bypass System (BrowserRenderer + AdaptiveExtractor + is_paywall_body 영어/프랑스어 26패턴), SM5 Quality Gate Evidence Guard, P1 사이트 레지스트리 교차 검증
 
 ---
 

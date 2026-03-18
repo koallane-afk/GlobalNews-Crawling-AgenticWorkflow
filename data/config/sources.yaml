@@ -197,7 +197,8 @@ sources:
       fallback_methods:
       - sitemap
       - dom
-      rss_url: http://file.mk.co.kr/news/rss/rss_30000001.xml
+      rss_url: https://www.mk.co.kr/rss/30000001/
+      rss_fallback_url: https://www.mk.co.kr/sitemap_news.xml
       sitemap_url: /sitemap.xml
       rate_limit_seconds: 5
       crawl_delay_mandatory: null
@@ -253,40 +254,6 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 250
       sections_count: 10
-      enabled: true
-  fnnews:
-    name: Financial News
-    url: https://www.fnnews.com
-    region: kr
-    language: ko
-    group: B
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: http://www.fnnews.com/rss/fn_realnews_all.xml
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 5
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 720
-      jitter_seconds: 0
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: true
-      proxy_region: kr
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Medium
-      daily_article_estimate: 150
-      sections_count: 8
       enabled: true
   mt:
     name: Money Today
@@ -390,40 +357,6 @@ sources:
       daily_article_estimate: 120
       sections_count: 10
       enabled: true
-  ohmynews:
-    name: OhmyNews
-    url: https://www.ohmynews.com
-    region: kr
-    language: ko
-    group: C
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.ohmynews.com/rss/rss.xml
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 2
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 1800
-      jitter_seconds: 0
-    anti_block:
-      ua_tier: 1
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: true
-      proxy_region: kr
-      bot_block_level: LOW
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Easy
-      daily_article_estimate: 80
-      sections_count: 8
-      enabled: true
   38north:
     name: 38 North
     url: https://www.38north.org
@@ -525,74 +458,6 @@ sources:
       daily_article_estimate: 100
       sections_count: 10
       enabled: true
-  sciencetimes:
-    name: Science Times
-    url: https://www.sciencetimes.co.kr
-    region: kr
-    language: ko
-    group: D
-    crawl:
-      primary_method: sitemap
-      fallback_methods:
-      - rss
-      - dom
-      rss_url: null
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 10
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 240
-      jitter_seconds: 3
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 2
-      max_escalation_tier: 5
-      requires_proxy: true
-      proxy_region: kr
-      bot_block_level: HIGH
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Hard
-      daily_article_estimate: 20
-      sections_count: 8
-      enabled: true
-  zdnet_kr:
-    name: ZDNet Korea
-    url: https://www.zdnet.co.kr
-    region: kr
-    language: ko
-    group: D
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.zdnet.co.kr/rss
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 5
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 720
-      jitter_seconds: 0
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: true
-      proxy_region: kr
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Medium
-      daily_article_estimate: 80
-      sections_count: 8
-      enabled: true
   irobotnews:
     name: iRobot News
     url: https://www.irobotnews.com
@@ -625,40 +490,6 @@ sources:
     meta:
       difficulty_tier: Hard
       daily_article_estimate: 10
-      sections_count: 5
-      enabled: true
-  techneedle:
-    name: TechNeedle
-    url: https://www.techneedle.com
-    region: kr
-    language: ko
-    group: D
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.techneedle.com/feed
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 10
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 240
-      jitter_seconds: 3
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 2
-      max_escalation_tier: 5
-      requires_proxy: true
-      proxy_region: kr
-      bot_block_level: HIGH
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Hard
-      daily_article_estimate: 5
       sections_count: 5
       enabled: true
   marketwatch:
@@ -701,40 +532,6 @@ sources:
       difficulty_tier: Hard
       daily_article_estimate: 200
       sections_count: 12
-      enabled: true
-  voakorea:
-    name: VOA Korea
-    url: https://www.voakorea.com
-    region: us
-    language: ko
-    group: E
-    crawl:
-      primary_method: sitemap
-      fallback_methods:
-      - dom
-      rss_url: null
-      api_feeds_page: https://www.voakorea.com/rssfeeds
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 2
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 1800
-      jitter_seconds: 0
-    anti_block:
-      ua_tier: 1
-      default_escalation_tier: 1
-      max_escalation_tier: 3
-      requires_proxy: false
-      proxy_region: null
-      bot_block_level: LOW
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Easy
-      daily_article_estimate: 50
-      sections_count: 6
       enabled: true
   huffpost:
     name: HuffPost
@@ -955,47 +752,6 @@ sources:
       daily_article_estimate: 50
       sections_count: 10
       enabled: true
-  nationalpost:
-    name: National Post
-    url: https://nationalpost.com
-    region: us
-    language: en
-    group: E
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://nationalpost.com/feed
-      rss_sections:
-      - url: https://nationalpost.com/category/news/feed
-        section: news
-      - url: https://nationalpost.com/category/opinion/feed
-        section: opinion
-      - url: https://nationalpost.com/category/politics/feed
-        section: politics
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 10
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 240
-      jitter_seconds: 3
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 2
-      max_escalation_tier: 5
-      requires_proxy: false
-      proxy_region: null
-      bot_block_level: HIGH
-    extraction:
-      paywall_type: soft-metered
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Hard
-      daily_article_estimate: 100
-      sections_count: 12
-      enabled: true
   cnn:
     name: CNN
     url: https://edition.cnn.com
@@ -1076,72 +832,6 @@ sources:
       daily_article_estimate: 200
       sections_count: 15
       enabled: true
-  afmedios:
-    name: AF Medios
-    url: https://afmedios.com
-    region: mx
-    language: es
-    group: E
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      rss_url: https://afmedios.com/rss
-      sitemap_url: /sitemap_index.xml
-      rate_limit_seconds: 2
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 1800
-      jitter_seconds: 0
-    anti_block:
-      ua_tier: 1
-      default_escalation_tier: 1
-      max_escalation_tier: 3
-      requires_proxy: false
-      proxy_region: null
-      bot_block_level: LOW
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Easy
-      daily_article_estimate: 20
-      sections_count: 6
-      enabled: true
-  people:
-    name: People's Daily
-    url: http://www.people.com.cn
-    region: cn
-    language: zh
-    group: F
-    crawl:
-      primary_method: sitemap
-      fallback_methods:
-      - dom
-      rss_url: null
-      sitemap_url: http://www.people.cn/sitemap_index.xml
-      rate_limit_seconds: 120
-      crawl_delay_mandatory: 120
-      max_requests_per_hour: 30
-      jitter_seconds: 0
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      proxy_region: null
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Medium
-      daily_article_estimate: 500
-      sections_count: 20
-      enabled: true
   globaltimes:
     name: Global Times
     url: https://www.globaltimes.cn
@@ -1149,10 +839,11 @@ sources:
     language: en
     group: F
     crawl:
-      primary_method: sitemap
+      primary_method: rss
       fallback_methods:
+      - sitemap
       - dom
-      rss_url: null
+      rss_url: https://www.globaltimes.cn/rss/outbrain.xml
       sitemap_url: /sitemap.xml
       rate_limit_seconds: 2
       crawl_delay_mandatory: null
@@ -1390,45 +1081,6 @@ sources:
       daily_article_estimate: 200
       sections_count: 10
       enabled: true
-  lemonde:
-    name: Le Monde
-    url: https://www.lemonde.fr
-    region: fr
-    language: fr
-    group: G
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      rss_url: https://www.lemonde.fr/rss/une.xml
-      rss_section_feeds:
-      - https://www.lemonde.fr/rss/en_continu.xml
-      - https://www.lemonde.fr/international/rss_full.xml
-      - https://www.lemonde.fr/politique/rss_full.xml
-      - https://www.lemonde.fr/economie/rss_full.xml
-      rss_english_feed: https://www.lemonde.fr/en/rss/une.xml
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 10
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 240
-      jitter_seconds: 3
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 3
-      max_escalation_tier: 6
-      requires_proxy: false
-      proxy_region: null
-      bot_block_level: HIGH
-    extraction:
-      paywall_type: hard
-      title_only: true
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Extreme
-      daily_article_estimate: 150
-      sections_count: 15
-      enabled: true
   themoscowtimes:
     name: The Moscow Times
     url: https://www.themoscowtimes.com
@@ -1467,41 +1119,6 @@ sources:
       daily_article_estimate: 20
       sections_count: 9
       enabled: true
-  arabnews:
-    name: Arab News
-    url: https://www.arabnews.com
-    region: me
-    language: en
-    group: G
-    crawl:
-      primary_method: sitemap
-      fallback_methods:
-      - dom
-      rss_url: null
-      sitemap_url: /sitemap.xml
-      sitemap_news_url: /sitemap-news.xml
-      rate_limit_seconds: 10
-      crawl_delay_mandatory: 10
-      max_requests_per_hour: 360
-      jitter_seconds: 0
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      proxy_region: me
-      proxy_requirement: recommended
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Medium
-      daily_article_estimate: 100
-      sections_count: 12
-      enabled: true
   aljazeera:
     name: Al Jazeera English
     url: https://www.aljazeera.com
@@ -1537,39 +1154,6 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 100
       sections_count: 12
-      enabled: true
-  israelhayom:
-    name: Israel Hayom
-    url: https://www.israelhayom.com
-    region: il
-    language: en
-    group: G
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      rss_url: https://www.israelhayom.com/feed
-      sitemap_url: /sitemap.xml
-      rate_limit_seconds: 2
-      crawl_delay_mandatory: null
-      max_requests_per_hour: 1800
-      jitter_seconds: 0
-    anti_block:
-      ua_tier: 1
-      default_escalation_tier: 1
-      max_escalation_tier: 3
-      requires_proxy: false
-      proxy_region: null
-      bot_block_level: LOW
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      difficulty_tier: Easy
-      daily_article_estimate: 30
-      sections_count: 5
       enabled: true
   insight_kr:
     name: Insight Korea
@@ -1704,74 +1288,6 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 30
       sections_count: 5
-  investing:
-    name: Investing.com
-    url: https://www.investing.com
-    language: en
-    group: E
-    region: US
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.investing.com/feed
-      sitemap_url: https://www.investing.com/sitemap.xml
-      rate_limit_seconds: 5
-      max_requests_per_hour: 60
-      jitter_seconds: 0
-      sections:
-      - https://www.investing.com
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: HIGH
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 100
-      sections_count: 5
-  qz:
-    name: Quartz
-    url: https://qz.com
-    language: en
-    group: E
-    region: US
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://qz.com/feed
-      sitemap_url: https://qz.com/sitemap.xml
-      rate_limit_seconds: 3
-      max_requests_per_hour: 120
-      jitter_seconds: 0
-      sections:
-      - https://qz.com
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Easy
-      daily_article_estimate: 20
-      sections_count: 5
   bbc:
     name: BBC News
     url: https://www.bbc.com
@@ -1872,38 +1388,6 @@ sources:
       difficulty_tier: Hard
       daily_article_estimate: 120
       sections_count: 5
-  telegraph:
-    name: The Telegraph
-    url: https://www.telegraph.co.uk
-    language: en
-    group: E
-    region: GB
-    crawl:
-      primary_method: sitemap
-      fallback_methods:
-      - dom
-      sitemap_url: https://www.telegraph.co.uk/sitemap.xml
-      rate_limit_seconds: 5
-      max_requests_per_hour: 60
-      jitter_seconds: 0
-      sections:
-      - https://www.telegraph.co.uk
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: HIGH
-    extraction:
-      paywall_type: soft-metered
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Hard
-      daily_article_estimate: 150
-      sections_count: 5
   politico_eu:
     name: Politico Europe
     url: https://www.politico.eu
@@ -1949,7 +1433,7 @@ sources:
       fallback_methods:
       - sitemap
       - dom
-      rss_url: https://www.euractiv.com/feed
+      rss_url: https://feeds.feedburner.com/euractiv
       sitemap_url: https://www.euractiv.com/sitemap.xml
       rate_limit_seconds: 2
       max_requests_per_hour: 200
@@ -2107,40 +1591,6 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 300
       sections_count: 5
-  timesofindia:
-    name: Times of India
-    url: https://timesofindia.indiatimes.com
-    language: en
-    group: F
-    region: IN
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://timesofindia.indiatimes.com/feed
-      sitemap_url: https://timesofindia.indiatimes.com/sitemap.xml
-      rate_limit_seconds: 3
-      max_requests_per_hour: 120
-      jitter_seconds: 0
-      sections:
-      - https://timesofindia.indiatimes.com
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Easy
-      daily_article_estimate: 300
-      sections_count: 5
   hindustantimes:
     name: Hindustan Times
     url: https://www.hindustantimes.com
@@ -2209,40 +1659,6 @@ sources:
       difficulty_tier: Easy
       daily_article_estimate: 150
       sections_count: 5
-  indianexpress:
-    name: Indian Express
-    url: https://indianexpress.com
-    language: en
-    group: F
-    region: IN
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://indianexpress.com/feed
-      sitemap_url: https://indianexpress.com/sitemap.xml
-      rate_limit_seconds: 5
-      max_requests_per_hour: 60
-      jitter_seconds: 0
-      sections:
-      - https://indianexpress.com
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Easy
-      daily_article_estimate: 200
-      sections_count: 5
   philstar:
     name: PhilStar
     url: https://www.philstar.com
@@ -2250,17 +1666,23 @@ sources:
     group: F
     region: PH
     crawl:
-      primary_method: rss
+      primary_method: dom
       fallback_methods:
       - sitemap
-      - dom
-      rss_url: https://www.philstar.com/feed
+      rss_url: null
+      rss_note: feed endpoint 404; section feeds available at philstar.com/rss but
+        require HTML parsing
       sitemap_url: https://www.philstar.com/sitemap.xml
       rate_limit_seconds: 3
       max_requests_per_hour: 120
       jitter_seconds: 0
       sections:
-      - https://www.philstar.com
+      - https://www.philstar.com/headlines
+      - https://www.philstar.com/nation
+      - https://www.philstar.com/world
+      - https://www.philstar.com/business
+      - https://www.philstar.com/sports
+      - https://www.philstar.com/entertainment
     anti_block:
       ua_tier: 2
       default_escalation_tier: 1
@@ -2276,73 +1698,6 @@ sources:
       enabled: true
       difficulty_tier: Medium
       daily_article_estimate: 80
-      sections_count: 5
-  manilatimes:
-    name: Manila Bulletin
-    url: https://mb.com.ph
-    language: en
-    group: F
-    region: PH
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - dom
-      rss_url: https://mb.com.ph/feed
-      sitemap_url: https://mb.com.ph/sitemap.xml
-      rate_limit_seconds: 5
-      max_requests_per_hour: 60
-      jitter_seconds: 0
-      sections:
-      - https://mb.com.ph
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 60
-      sections_count: 5
-  inquirer:
-    name: Philippine Daily Inquirer
-    url: https://www.inquirer.net
-    language: en
-    group: F
-    region: PH
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.inquirer.net/feed
-      sitemap_url: https://www.inquirer.net/sitemap.xml
-      rate_limit_seconds: 3
-      max_requests_per_hour: 120
-      jitter_seconds: 0
-      sections:
-      - https://www.inquirer.net
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 100
       sections_count: 5
   jakartapost:
     name: The Jakarta Post
@@ -2684,40 +2039,6 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 80
       sections_count: 5
-  welt:
-    name: Die Welt
-    url: https://www.welt.de
-    language: de
-    group: G
-    region: DE
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.welt.de/feed
-      sitemap_url: https://www.welt.de/sitemap.xml
-      rate_limit_seconds: 5
-      max_requests_per_hour: 60
-      jitter_seconds: 0
-      sections:
-      - https://www.welt.de
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: soft-metered
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 100
-      sections_count: 5
   faz:
     name: Frankfurter Allgemeine
     url: https://www.faz.net
@@ -2751,40 +2072,6 @@ sources:
       enabled: true
       difficulty_tier: Hard
       daily_article_estimate: 80
-      sections_count: 5
-  corriere:
-    name: Corriere della Sera
-    url: https://www.corriere.it
-    language: it
-    group: G
-    region: IT
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.corriere.it/feed
-      sitemap_url: https://www.corriere.it/sitemap.xml
-      rate_limit_seconds: 3
-      max_requests_per_hour: 120
-      jitter_seconds: 0
-      sections:
-      - https://www.corriere.it
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: soft-metered
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 120
       sections_count: 5
   repubblica:
     name: La Repubblica
@@ -3203,7 +2490,7 @@ sources:
       fallback_methods:
       - sitemap
       - dom
-      rss_url: https://www.idnes.cz/feed
+      rss_url: http://servis.idnes.cz/rss.aspx?c=zpravodaj
       sitemap_url: https://www.idnes.cz/sitemap.xml
       rate_limit_seconds: 3
       max_requests_per_hour: 120
@@ -3226,40 +2513,6 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 80
       sections_count: 5
-  intellinews:
-    name: Intellinews
-    url: https://www.intellinews.com/news/
-    language: en
-    group: G
-    region: EU
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.intellinews.com/news/feed
-      sitemap_url: https://www.intellinews.com/news/sitemap.xml
-      rate_limit_seconds: 2
-      max_requests_per_hour: 200
-      jitter_seconds: 0
-      sections:
-      - https://www.intellinews.com/news/
-    anti_block:
-      ua_tier: 1
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 30
-      sections_count: 5
   balkaninsight:
     name: Balkan Insight (BIRN)
     url: https://balkaninsight.com
@@ -3271,7 +2524,7 @@ sources:
       fallback_methods:
       - sitemap
       - dom
-      rss_url: https://balkaninsight.com/feed
+      rss_url: https://balkaninsight.com/feed/
       sitemap_url: https://balkaninsight.com/sitemap.xml
       rate_limit_seconds: 2
       max_requests_per_hour: 200
@@ -3293,39 +2546,6 @@ sources:
       enabled: true
       difficulty_tier: Medium
       daily_article_estimate: 20
-      sections_count: 5
-  centraleuropeantimes:
-    name: Central European Times
-    url: https://centraleuropeantimes.com
-    language: en
-    group: G
-    region: EU
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - dom
-      rss_url: https://centraleuropeantimes.com/feed
-      sitemap_url: https://centraleuropeantimes.com/sitemap.xml
-      rate_limit_seconds: 2
-      max_requests_per_hour: 200
-      jitter_seconds: 0
-      sections:
-      - https://centraleuropeantimes.com
-    anti_block:
-      ua_tier: 1
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 15
       sections_count: 5
   aftonbladet:
     name: Aftonbladet
@@ -3368,12 +2588,13 @@ sources:
     group: G
     region: 'NO'
     crawl:
-      primary_method: rss
+      primary_method: sitemap
       fallback_methods:
-      - sitemap
       - dom
-      rss_url: https://www.tv2.no/feed
-      sitemap_url: https://www.tv2.no/sitemap.xml
+      rss_url: null
+      rss_note: tv2.no/feed returns 404; no public RSS feed found
+      sitemap_url: https://www.tv2.no/sitemap/news/sitemap.xml
+      sitemap_index_url: https://www.tv2.no/sitemap/sitemap.xml
       rate_limit_seconds: 3
       max_requests_per_hour: 120
       jitter_seconds: 0
@@ -3395,6 +2616,40 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 60
       sections_count: 5
+  nrk_no:
+    name: NRK (Norwegian Broadcasting Corporation)
+    url: https://www.nrk.no
+    language: 'no'
+    group: G
+    region: 'NO'
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.nrk.no/toppsaker.rss
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 3
+      max_requests_per_hour: 120
+      jitter_seconds: 1
+      sections:
+      - https://www.nrk.no
+    anti_block:
+      ua_tier: 1
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      enabled: true
+      difficulty_tier: Easy
+      daily_article_estimate: 150
+      sections_count: 10
   yle:
     name: YLE News
     url: https://yle.fi/news
@@ -3529,73 +2784,6 @@ sources:
       enabled: true
       difficulty_tier: Medium
       daily_article_estimate: 60
-      sections_count: 5
-  theafricareport:
-    name: The Africa Report
-    url: https://www.theafricareport.com
-    language: en
-    group: H
-    region: AF
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.theafricareport.com/feed
-      sitemap_url: https://www.theafricareport.com/sitemap.xml
-      rate_limit_seconds: 2
-      max_requests_per_hour: 200
-      jitter_seconds: 0
-      sections:
-      - https://www.theafricareport.com
-    anti_block:
-      ua_tier: 1
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 30
-      sections_count: 5
-  panapress:
-    name: Panapress
-    url: https://www.panapress.com
-    language: en
-    group: H
-    region: AF
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - dom
-      rss_url: https://www.panapress.com/feed
-      sitemap_url: https://www.panapress.com/sitemap.xml
-      rate_limit_seconds: 2
-      max_requests_per_hour: 200
-      jitter_seconds: 0
-      sections:
-      - https://www.panapress.com
-    anti_block:
-      ua_tier: 1
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 20
       sections_count: 5
   clarin:
     name: Clarin
@@ -3733,38 +2921,6 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 120
       sections_count: 5
-  elmercurio:
-    name: El Mercurio
-    url: https://digital.elmercurio.com
-    language: es
-    group: I
-    region: CL
-    crawl:
-      primary_method: dom
-      fallback_methods:
-      - sitemap
-      sitemap_url: https://digital.elmercurio.com/sitemap.xml
-      rate_limit_seconds: 5
-      max_requests_per_hour: 60
-      jitter_seconds: 0
-      sections:
-      - https://digital.elmercurio.com
-    anti_block:
-      ua_tier: 3
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 80
-      sections_count: 5
   biobiochile:
     name: BioBioChile
     url: https://www.biobiochile.cl
@@ -3833,9 +2989,9 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 100
       sections_count: 5
-  elcomercio_pe:
-    name: El Comercio Peru
-    url: https://elcomercio.pe
+  rpp_pe:
+    name: RPP Noticias
+    url: https://rpp.pe
     language: es
     group: I
     region: PE
@@ -3844,19 +3000,19 @@ sources:
       fallback_methods:
       - sitemap
       - dom
-      rss_url: https://elcomercio.pe/feed
-      sitemap_url: https://elcomercio.pe/sitemap.xml
+      rss_url: https://rpp.pe/rss
+      sitemap_url: /sitemap.xml
       rate_limit_seconds: 3
       max_requests_per_hour: 120
       jitter_seconds: 0
       sections:
-      - https://elcomercio.pe
+      - https://rpp.pe
     anti_block:
       ua_tier: 2
       default_escalation_tier: 1
       max_escalation_tier: 5
       requires_proxy: false
-      bot_block_level: MEDIUM
+      bot_block_level: LOW
     extraction:
       paywall_type: none
       title_only: false
@@ -3864,9 +3020,9 @@ sources:
       charset: utf-8
     meta:
       enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 60
-      sections_count: 5
+      difficulty_tier: Easy
+      daily_article_estimate: 80
+      sections_count: 8
   gogo_mn:
     name: GoGo Mongolia
     url: https://mongolia.gogo.mn
@@ -3967,40 +3123,6 @@ sources:
       enabled: true
       difficulty_tier: Medium
       daily_article_estimate: 150
-      sections_count: 5
-  rbc:
-    name: RBC
-    url: https://www.rbc.ru
-    language: ru
-    group: J
-    region: RU
-    crawl:
-      primary_method: rss
-      fallback_methods:
-      - sitemap
-      - dom
-      rss_url: https://www.rbc.ru/feed
-      sitemap_url: https://www.rbc.ru/sitemap.xml
-      rate_limit_seconds: 3
-      max_requests_per_hour: 120
-      jitter_seconds: 0
-      sections:
-      - https://www.rbc.ru
-    anti_block:
-      ua_tier: 2
-      default_escalation_tier: 1
-      max_escalation_tier: 5
-      requires_proxy: false
-      bot_block_level: MEDIUM
-    extraction:
-      paywall_type: none
-      title_only: false
-      rendering_required: false
-      charset: utf-8
-    meta:
-      enabled: true
-      difficulty_tier: Medium
-      daily_article_estimate: 200
       sections_count: 5
   middleeasteye:
     name: Middle East Eye
@@ -4171,3 +3293,720 @@ sources:
       difficulty_tier: Medium
       daily_article_estimate: 20
       sections_count: 5
+  france24_fr:
+    name: France 24 French
+    url: https://www.france24.com/fr
+    region: FR
+    language: fr
+    group: G
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.france24.com/fr/france/rss
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 80
+      sections_count: 10
+      enabled: true
+  cnbc:
+    name: CNBC
+    url: https://www.cnbc.com
+    region: us
+    language: en
+    group: E
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.cnbc.com/id/100003114/device/rss/rss.html
+      rss_fallback_url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 2
+    anti_block:
+      ua_tier: 3
+      default_escalation_tier: 2
+      max_escalation_tier: 5
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: HIGH
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Hard
+      daily_article_estimate: 200
+      sections_count: 15
+      enabled: true
+      note: RSS feed verified working (32 items). 403 is on article pages. robots.txt
+        blocks Claude/AI bots explicitly.
+  fortune:
+    name: Fortune
+    url: https://fortune.com
+    region: us
+    language: en
+    group: E
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://fortune.com/feed/
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 5
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: MEDIUM
+    extraction:
+      paywall_type: soft-metered
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Medium
+      daily_article_estimate: 50
+      sections_count: 8
+      enabled: true
+  nbcnews:
+    name: NBC News
+    url: https://www.nbcnews.com
+    region: us
+    language: en
+    group: E
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://feeds.nbcnews.com/nbcnews/public/news
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 5
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: MEDIUM
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Medium
+      daily_article_estimate: 150
+      sections_count: 12
+      enabled: true
+  jordannews:
+    name: Jordan News
+    url: https://jordannews.jo
+    region: JO
+    language: en
+    group: G
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://jordannews.jo/rss/
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 1
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 30
+      sections_count: 6
+      enabled: true
+  ruv_english:
+    name: RUV English (Iceland)
+    url: https://www.ruv.is
+    region: IS
+    language: en
+    group: G
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.ruv.is/rss/english
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 1
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 15
+      sections_count: 5
+      enabled: true
+  novinky:
+    name: Novinky.cz
+    url: https://www.novinky.cz
+    region: CZ
+    language: cs
+    group: G
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.novinky.cz/rss
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 80
+      sections_count: 8
+      enabled: true
+  eluniversal_mx:
+    name: El Universal Mexico
+    url: https://www.eluniversal.com.mx
+    region: MX
+    language: es
+    group: I
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.eluniversal.com.mx/arc/outboundfeeds/rss/?outputType=xml
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 100
+      sections_count: 10
+      enabled: true
+  taz:
+    name: Die Tageszeitung
+    url: https://www.taz.de
+    region: DE
+    language: de
+    group: G
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.taz.de/rss.xml
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 80
+      sections_count: 10
+      enabled: true
+  ndtv:
+    name: NDTV
+    url: https://www.ndtv.com
+    region: IN
+    language: en
+    group: F
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://feeds.feedburner.com/ndtvnews-latest
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 5
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: MEDIUM
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Medium
+      daily_article_estimate: 200
+      sections_count: 15
+      enabled: true
+  indiatvnews:
+    name: India TV News
+    url: https://www.indiatvnews.com
+    region: IN
+    language: en
+    group: F
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.indiatvnews.com/rssnews/topstory.xml
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 100
+      sections_count: 10
+      enabled: true
+  ilfattoquotidiano:
+    name: Il Fatto Quotidiano
+    url: https://www.ilfattoquotidiano.it
+    region: IT
+    language: it
+    group: G
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.ilfattoquotidiano.it/feed/
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 60
+      sections_count: 8
+      enabled: true
+  tass:
+    name: TASS
+    url: https://tass.com
+    region: RU
+    language: en
+    group: J
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://tass.com/rss/v2.xml
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 200
+      sections_count: 12
+      enabled: true
+  rappler:
+    name: Rappler
+    url: https://www.rappler.com
+    region: PH
+    language: en
+    group: F
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.rappler.com/feed/
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 80
+      sections_count: 10
+      enabled: true
+  dailymaverick:
+    name: Daily Maverick
+    url: https://www.dailymaverick.co.za
+    region: AF
+    language: en
+    group: H
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.dailymaverick.co.za/rss
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 40
+      sections_count: 8
+      enabled: true
+  standardmedia:
+    name: Standard Media Kenya
+    url: https://www.standardmedia.co.ke
+    region: AF
+    language: en
+    group: H
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.standardmedia.co.ke/rss/headlines.php
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 1
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 50
+      sections_count: 8
+      enabled: true
+  latercera:
+    name: La Tercera
+    url: https://www.latercera.com
+    region: CL
+    language: es
+    group: I
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.latercera.com/rss
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: soft-metered
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 80
+      sections_count: 10
+      enabled: true
+  koreatimes:
+    name: Korea Times
+    url: https://www.koreatimes.co.kr
+    region: kr
+    language: en
+    group: D
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://feed.koreatimes.co.kr/k/allnews.xml
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 50
+      sections_count: 8
+      enabled: true
+  axios:
+    name: Axios
+    url: https://www.axios.com
+    region: US
+    language: en
+    group: E
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://api.axios.com/feed/
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 5
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: MEDIUM
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Medium
+      daily_article_estimate: 30
+      sections_count: 8
+      enabled: true
+  france24_en:
+    name: France 24 English
+    url: https://www.france24.com/en
+    region: FR
+    language: en
+    group: G
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://www.france24.com/en/rss
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 80
+      sections_count: 10
+      enabled: true
+  inquirer_newsinfo:
+    name: Inquirer Newsinfo
+    url: https://newsinfo.inquirer.net
+    region: PH
+    language: en
+    group: F
+    crawl:
+      primary_method: rss
+      fallback_methods:
+      - sitemap
+      - dom
+      rss_url: https://newsinfo.inquirer.net/feed
+      sitemap_url: /sitemap.xml
+      rate_limit_seconds: 5
+      crawl_delay_mandatory: null
+      max_requests_per_hour: 720
+      jitter_seconds: 0
+    anti_block:
+      ua_tier: 2
+      default_escalation_tier: 1
+      max_escalation_tier: 3
+      requires_proxy: false
+      proxy_region: null
+      bot_block_level: LOW
+    extraction:
+      paywall_type: none
+      title_only: false
+      rendering_required: false
+      charset: utf-8
+    meta:
+      difficulty_tier: Easy
+      daily_article_estimate: 60
+      sections_count: 8
+      enabled: true

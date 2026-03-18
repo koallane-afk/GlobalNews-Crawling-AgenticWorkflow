@@ -88,15 +88,17 @@ NEVER_ABANDON_BACKOFF_FACTOR = 1.5  # Exponential backoff multiplier
 ALTERNATIVE_STRATEGIES = [
     "rotate_user_agent",         # Tier 0: User-Agent string rotation
     "exponential_backoff",       # Tier 0: Exponential delay with jitter
-    "rss_feed_fallback",         # Tier 0: RSS/Atom feed for full-text articles
+    "rss_feed_fallback",         # Tier 0: RSS/Atom feed (includes Google News RSS)
     "google_cache_fallback",     # Tier 0: Google's cached version of the page
     "amp_version_fallback",      # Tier 0: AMP version (often less protected)
+    "gdelt_api_fallback",        # Tier 0: GDELT DOC API for URL discovery
     "curl_cffi_impersonate",     # Tier 1: TLS fingerprint mimicry (JA3/JA4)
     "fingerprint_rotation",      # Tier 1: Rotate all TLS profiles
     "cloudscraper_solve",        # Tier 1: Cloudflare JS challenge solver
     "patchright_stealth",        # Tier 2: Full stealth browser (Chromium)
     "camoufox_stealth",          # Tier 2: Full stealth browser (Firefox)
     "proxy_rotation",            # Tier 3: Proxy pool + TLS mimicry
+    "archive_today_fallback",    # Tier 4: archive.today mirror
     "wayback_fallback",          # Tier 4: Internet Archive (last resort)
 ]
 

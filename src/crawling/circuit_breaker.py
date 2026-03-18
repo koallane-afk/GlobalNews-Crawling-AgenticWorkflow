@@ -2,7 +2,7 @@
 
 Wraps the base CircuitBreaker from error_handler.py with per-domain isolation,
 integration with the BlockDetector and AntiBlockEngine, and centralized
-state management across all 121 news sites.
+state management across all 116 news sites.
 
 State Machine per domain:
     CLOSED     -- Normal operation, counting consecutive failures.

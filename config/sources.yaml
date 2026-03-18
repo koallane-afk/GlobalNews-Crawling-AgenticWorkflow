@@ -2,7 +2,7 @@ _meta:
   version: 1.0.0-draft
   generated_by: generate_sources_yaml_draft.py
   description: News sources configuration — auto-generated draft from site reconnaissance
-  total_sites: 121
+  total_sites: 116
 sources:
 - domain: 38north.org
   name: 38 North

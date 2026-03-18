@@ -763,10 +763,24 @@ class CrawlingPipeline:
             if delay > 0:
                 time.sleep(min(delay, 120.0))  # Cap actual sleep for usability
 
-            # Reset circuit breaker for fresh attempt
+            # Reset BOTH circuit breakers for fresh attempt:
+            # 1. Pipeline-level CircuitBreakerCoordinator
+            # 2. NetworkGuard's internal per-site circuit breaker
+            # BUG FIX: Previously only the coordinator was reset, leaving
+            # NetworkGuard's CB in OPEN state. This caused Phase B
+            # (_crawl_site_with_retry) to fail immediately on every cycle
+            # because NetworkGuard.fetch() raises NetworkError when its
+            # own CB is OPEN, independent of the coordinator.
             self._circuit_breakers.reset(site_id)
+            assert self._guard is not None
+            ng_cb = self._guard._circuit_breakers.get(site_id)
+            if ng_cb is not None:
+                ng_cb.reset()
 
             # Phase A: Try DynamicBypassEngine strategies on failed URLs
+            # Uses try_all_strategies() (no cap) with start_offset to
+            # rotate strategy order across cycles. Each cycle starts from
+            # a different strategy instead of always trying curl_cffi first.
             if state.failed_urls and self._bypass_engine is not None:
                 bypass_success = False
                 recovered_urls: list[str] = []
@@ -774,11 +788,12 @@ class CrawlingPipeline:
                 try:
                     with JSONLWriter(output_path) as writer:
                         for failed_url in sorted(state.failed_urls):
-                            result = self._bypass_engine.try_strategies(
+                            result = self._bypass_engine.try_all_strategies(
                                 url=failed_url,
                                 block_type=last_block_type,
                                 site_id=site_id,
                                 timeout=30.0,
+                                start_offset=state.never_abandon_strategy_idx,
                             )
                             if result.success:
                                 bypass_success = True
@@ -827,6 +842,15 @@ class CrawlingPipeline:
                     )
 
             # Phase B: Fallback — full pipeline re-crawl with TotalWar
+            # Reset BOTH circuit breakers again before Phase B. Phase A
+            # failures may have re-tripped the coordinator and NetworkGuard
+            # CBs. Without this reset, _crawl_site_with_retry immediately
+            # fails because NetworkGuard.fetch() blocks on its OPEN CB.
+            self._circuit_breakers.reset(site_id)
+            ng_cb_b = self._guard._circuit_breakers.get(site_id)
+            if ng_cb_b is not None:
+                ng_cb_b.reset()
+
             state.current_strategy = StrategyMode.TOTALWAR
             state.current_round = 1
             state.exhausted = False
@@ -1960,6 +1984,7 @@ class CrawlingPipeline:
                     source_id=site_id,
                     site_config=site_cfg,
                     title_hint=url_obj.title_hint,
+                    discovered_via=url_obj.discovered_via,
                 )
 
                 # Override crawl_method from discovery
@@ -2035,7 +2060,7 @@ class CrawlingPipeline:
                     writer.write_article(article)
                     # H-16 fix: don't keep full article bodies in memory.
                     # Articles are already persisted to JSONL; keeping them in
-                    # result.articles wastes ~1.2 GB for 121 sites at scale.
+                    # result.articles wastes ~1.2 GB for 116 sites at scale.
                     # extracted_count is the authoritative counter.
                     result.extracted_count += 1
 

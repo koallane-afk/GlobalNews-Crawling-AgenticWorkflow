@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Site Coverage Validator — P1 deterministic 121-site coverage check.
+"""Site Coverage Validator — P1 deterministic 116-site coverage check.
 
-Verifies that a document mentions all 121 target news sites.
-Used after Steps 1, 6, 11 to prevent "all 121 sites covered" hallucination.
+Verifies that a document mentions all 116 target news sites.
+Used after Steps 1, 6, 11 to prevent "all 116 sites covered" hallucination.
 
 Usage:
     python3 scripts/validate_site_coverage.py --file research/site-reconnaissance.md --project-dir .
@@ -18,7 +18,7 @@ import re
 import sys
 
 # ---------------------------------------------------------------------------
-# Fallback 121 site domains (used only when runtime SOT unavailable)
+# Fallback 116 site domains (used only when runtime SOT unavailable)
 # P1: Normal operation derives sites from data/config/sources.yaml
 # via _load_sites_from_runtime_sot(), preventing hardcoded list desync.
 # ---------------------------------------------------------------------------

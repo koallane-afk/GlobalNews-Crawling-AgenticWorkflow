@@ -9,7 +9,7 @@ Usage:
 Output: JSON with structured site list (domain, language, group) to stdout.
 
 This is a P1 pre-processing script: deterministic extraction, no LLM inference.
-It extracts the 121 news site URLs from either the PRD document (parsing the
+It extracts the 116 news site URLs from either the PRD document (parsing the
 Target Sites table in workflow.md or the data source tables in PRD.md) or from
 a sources.yaml configuration file if it exists.
 """
@@ -24,7 +24,7 @@ import sys
 from typing import Any
 
 # -- Canonical site registry -------------------------------------------------
-# Derived from workflow.md Target Sites table (the authoritative 121-site list).
+# Derived from workflow.md Target Sites table (the authoritative 116-site list).
 # Each entry: (domain, language, group_code, group_label)
 _CANONICAL_SITES: list[tuple[str, str, str, str]] = [
     # Group A — Korean Major Dailies (5)
@@ -291,7 +291,7 @@ def _extract_from_prd(prd_path: str) -> list[dict[str, Any]] | None:
 
 
 def _build_canonical_sites() -> list[dict[str, Any]]:
-    """Build the full 121-site list from the hardcoded canonical registry."""
+    """Build the full 116-site list from the hardcoded canonical registry."""
     sites: list[dict[str, Any]] = []
     for domain, lang, group, group_label in _CANONICAL_SITES:
         meta = _GROUP_META.get(group, {})
@@ -338,10 +338,10 @@ def main() -> None:
     sites = _try_load_yaml(sources_path)
     data_source = "sources.yaml"
 
-    # Priority 2: Canonical list (authoritative 121-site set from workflow.md),
+    # Priority 2: Canonical list (authoritative 116-site set from workflow.md),
     # enriched with PRD cross-reference data.
     # The PRD sections 4.1/4.2 only list ~14 sites as initial proposals, while
-    # the full 121-site target is defined in workflow.md. The canonical registry
+    # the full 116-site target is defined in workflow.md. The canonical registry
     # is therefore the primary source, and the PRD provides supplementary info.
     if sites is None:
         prd_path = os.path.join(

@@ -23,7 +23,7 @@
 | Python | 3.12 이상, 3.14 미만 | `python3 --version` |
 | 디스크 공간 | 20GB+ 여유 | 크롤링 데이터 + NLP 모델 저장 |
 | RAM | 16GB 이상 (권장 48GB) | `sysctl hw.memsize` |
-| 네트워크 | 인터넷 연결 필수 | 121개 해외 뉴스 사이트 접근 |
+| 네트워크 | 인터넷 연결 필수 | 116개 해외 뉴스 사이트 접근 |
 
 ### 1.2 설치 절차
 
@@ -73,7 +73,7 @@ python3 scripts/preflight_check.py --project-dir . --mode full --json
   "readiness": "ready",
   "critical_failures": [],
   "degradations": ["patchright missing -- Extreme difficulty sites will be skipped"],
-  "enabled_sites": 121,
+  "enabled_sites": 116,
   "disk_free_gb": 128.5
 }
 ```
@@ -149,7 +149,7 @@ python3 main.py --mode status
 
 ### 2.5 사이트 그룹
 
-121개 사이트는 10개 그룹으로 분류된다:
+116개 사이트는 10개 그룹으로 분류된다:
 
 | 그룹 | 카테고리 | 사이트 수 | 예시 |
 |------|---------|----------|------|
@@ -253,7 +253,7 @@ for src, cnt in sources.most_common():
 ```
 
 출력 항목:
-- **Sites with articles**: 기사를 수집한 사이트 수 / 121 (SOT `config_loader.get_enabled_sites()` 기반)
+- **Sites with articles**: 기사를 수집한 사이트 수 / 116 (SOT `config_loader.get_enabled_sites()` 기반)
 - **Sites with 0 articles**: 추출 실패 사이트 수
 - **Sites in progress**: 현재 크롤링 중인 사이트 수
 - **Deadline yields**: Fairness Yield로 일시 중단된 사이트 수
@@ -902,5 +902,5 @@ Claude Code 내에서 `/run` 또는 시작 트리거를 입력하면:
 | [`GLOBALNEWS-README.md`](GLOBALNEWS-README.md) | 시스템 개요, 빠른 시작, 실행 결과 |
 | [`GLOBALNEWS-ARCHITECTURE-AND-PHILOSOPHY.md`](GLOBALNEWS-ARCHITECTURE-AND-PHILOSOPHY.md) | 설계 철학, 4-Layer 시스템 아키텍처 + 5계층 QA |
 | [`prompt/workflow.md`](prompt/workflow.md) | 20-step 워크플로우 설계도 (구축 과정 기록) |
-| [`config/sources.yaml`](config/sources.yaml) | 121개 사이트 설정 (URL, 선택자, 제한) |
+| [`config/sources.yaml`](config/sources.yaml) | 116개 사이트 설정 (URL, 선택자, 제한) |
 | [`data/config/pipeline.yaml`](data/config/pipeline.yaml) | 8-Stage 분석 파이프라인 설정 |

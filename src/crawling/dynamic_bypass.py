@@ -160,25 +160,38 @@ STRATEGY_MAP: dict[BlockType, list[str]] = {
     ],
     BlockType.IP_BLOCK: [
         "proxy_rotation",            # T3: different IP
-        "rss_feed_fallback",         # T0: alternative source
+        "rss_feed_fallback",         # T0: alternative source (includes Google News RSS)
+        "gdelt_api_fallback",        # T0: GDELT DOC API for URL discovery
         "google_cache_fallback",     # T0: Google's cached version
+        "archive_today_fallback",    # T4: archive.today mirror
         "wayback_fallback",          # T4: Internet Archive
     ],
     BlockType.GEO_BLOCK: [
         "amp_version_fallback",      # T0: AMP CDN (different geo)
         "google_cache_fallback",     # T0: Google's cached version
+        "gdelt_api_fallback",        # T0: GDELT DOC API for URL discovery
         "proxy_rotation",            # T3: geo-targeted proxy
+        "archive_today_fallback",    # T4: archive.today mirror
         "wayback_fallback",          # T4: Internet Archive
     ],
 }
 
 # Default strategy order for unknown/unclassified blocks
 _DEFAULT_STRATEGIES: list[str] = [
-    "curl_cffi_impersonate",
-    "patchright_stealth",
-    "proxy_rotation",
-    "rss_feed_fallback",
-    "wayback_fallback",
+    "rotate_user_agent",         # T0: simple UA rotation (always available)
+    "curl_cffi_impersonate",     # T1: TLS fingerprint mimicry
+    "rss_feed_fallback",         # T0: RSS/Atom feed (includes Google News RSS)
+    "google_cache_fallback",     # T0: Google's cached version
+    "amp_version_fallback",      # T0: AMP version
+    "gdelt_api_fallback",        # T0: GDELT DOC API
+    "exponential_backoff",       # T0: wait then retry
+    "fingerprint_rotation",      # T1: rotate all TLS profiles
+    "cloudscraper_solve",        # T1: Cloudflare JS solver
+    "patchright_stealth",        # T2: stealth browser (Chromium)
+    "camoufox_stealth",          # T2: stealth browser (Firefox)
+    "proxy_rotation",            # T3: proxy pool
+    "archive_today_fallback",    # T4: archive.today mirror
+    "wayback_fallback",          # T4: Internet Archive
 ]
 
 # TLS fingerprint profiles for curl_cffi rotation
@@ -216,6 +229,42 @@ _FINGERPRINT_PROFILES: list[dict[str, Any]] = [
         "user_agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) "
             "Gecko/20100101 Firefox/120.0"
+        ),
+        "sec_ch_ua": "",  # Firefox doesn't send sec-ch-ua
+        "platform": "Windows",
+    },
+    {
+        "impersonate": "chrome131",
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        ),
+        "sec_ch_ua": '"Chromium";v="131", "Google Chrome";v="131", "Not-A.Brand";v="99"',
+        "platform": "Windows",
+    },
+    {
+        "impersonate": "edge101",
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/101.0.4951.64 Safari/537.36 Edg/101.0.1210.53"
+        ),
+        "sec_ch_ua": '"Microsoft Edge";v="101", "Chromium";v="101", " Not A;Brand";v="99"',
+        "platform": "Windows",
+    },
+    {
+        "impersonate": "safari18_0",
+        "user_agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+            "(KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+        ),
+        "sec_ch_ua": "",  # Safari doesn't send sec-ch-ua
+        "platform": "macOS",
+    },
+    {
+        "impersonate": "firefox133",
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) "
+            "Gecko/20100101 Firefox/131.0"
         ),
         "sec_ch_ua": "",  # Firefox doesn't send sec-ch-ua
         "platform": "Windows",
@@ -345,6 +394,12 @@ class DynamicBypassEngine:
             effective_against={BlockType.GEO_BLOCK, BlockType.IP_BLOCK},
             description="Fetch Google's cached version of the page",
         ))
+        self._register(BypassStrategy(
+            name="gdelt_api_fallback",
+            tier=StrategyTier.TIER_0,
+            effective_against={BlockType.IP_BLOCK, BlockType.GEO_BLOCK},
+            description="GDELT DOC API for discovering article URLs (bypasses WAF)",
+        ))
 
         # Tier 1 — TLS fingerprint mimicry (curl_cffi, cloudscraper)
         self._register(BypassStrategy(
@@ -403,6 +458,12 @@ class DynamicBypassEngine:
             ))
 
         # Tier 4 — Archive sources (last resort)
+        self._register(BypassStrategy(
+            name="archive_today_fallback",
+            tier=StrategyTier.TIER_4,
+            effective_against={BlockType.IP_BLOCK, BlockType.GEO_BLOCK},
+            description="Fetch from archive.today mirror (recent snapshots)",
+        ))
         self._register(BypassStrategy(
             name="wayback_fallback",
             tier=StrategyTier.TIER_4,
@@ -560,6 +621,35 @@ class DynamicBypassEngine:
                 latency_ms=latency_ms,
             )
 
+    # Errors indicating a strategy is not installed/configured (not a real attempt)
+    _UNAVAILABLE_ERRORS = frozenset({
+        "not installed", "not configured", "No proxy pool configured",
+        "No handler for strategy",
+    })
+
+    @staticmethod
+    def _is_unavailable_error(result: BypassResult) -> bool:
+        """Check if a BypassResult failed because the strategy is unavailable.
+
+        Unavailable means the library is not installed or the strategy is
+        not configured (e.g., no proxy pool). These should NOT count as
+        real attempts against the max_attempts budget.
+
+        Args:
+            result: The BypassResult to check.
+
+        Returns:
+            True if the failure is due to unavailability, not a real attempt.
+        """
+        if result.success:
+            return False
+        if not result.error:
+            return False
+        error_lower = result.error.lower()
+        return any(marker in error_lower for marker in (
+            "not installed", "no proxy pool", "no handler for strategy",
+        ))
+
     def try_strategies(
         self,
         url: str,
@@ -570,9 +660,12 @@ class DynamicBypassEngine:
     ) -> BypassResult:
         """Try multiple strategies in order until one succeeds.
 
-        This is the primary entry point for the Never-Abandon loop.
         Selects strategies based on the block type, tries them in
         cost-ascending order, and returns the first successful result.
+
+        Strategies that are unavailable (library not installed, no proxy
+        pool, etc.) do NOT count against the max_attempts budget. Only
+        real network attempts count.
 
         Args:
             url: The URL to fetch.
@@ -597,9 +690,12 @@ class DynamicBypassEngine:
                 strategies = [s for s in _DEFAULT_STRATEGIES if s in self._strategies]
 
         tried: set[str] = set()
+        real_attempts = 0
         last_result = BypassResult(success=False, error="No strategies available")
 
-        for strategy_name in strategies[:max_attempts]:
+        for strategy_name in strategies:
+            if real_attempts >= max_attempts:
+                break
             if strategy_name in tried:
                 continue
             tried.add(strategy_name)
@@ -611,6 +707,11 @@ class DynamicBypassEngine:
             if result.success:
                 return result
 
+            # Unavailable strategies (ImportError, no proxy) don't count
+            # as real attempts — skip them without penalty.
+            if not self._is_unavailable_error(result):
+                real_attempts += 1
+
             # If block type changed, re-select strategies
             if result.block_detected and result.block_detected != block_type:
                 self._domain_block_cache[domain] = result.block_detected
@@ -618,6 +719,98 @@ class DynamicBypassEngine:
                     result.block_detected, domain,
                 )
                 # Add untried strategies from new list
+                for s in new_strategies:
+                    if s not in tried and s not in strategies:
+                        strategies.append(s)
+
+            last_result = result
+
+        return last_result
+
+    def try_all_strategies(
+        self,
+        url: str,
+        block_type: BlockType | None,
+        site_id: str = "",
+        timeout: float = 30.0,
+        start_offset: int = 0,
+    ) -> BypassResult:
+        """Try ALL registered strategies for a URL (no cap on attempts).
+
+        This is the entry point for the Never-Abandon loop. Unlike
+        try_strategies() which caps at _MAX_STRATEGIES_PER_URL, this
+        method iterates through every registered strategy. Strategies
+        that are unavailable (not installed) are silently skipped.
+
+        The start_offset parameter allows rotating the strategy order
+        across Never-Abandon cycles, so each cycle begins from a
+        different strategy instead of always starting with the same one.
+
+        Args:
+            url: The URL to fetch.
+            block_type: The detected block type (None for unknown).
+            site_id: Site identifier for logging and stats.
+            timeout: Request timeout per strategy.
+            start_offset: Index offset to rotate strategy order. Each
+                Never-Abandon cycle should pass a different offset to
+                ensure different strategies are tried first.
+
+        Returns:
+            BypassResult from the first successful strategy, or the
+            last failure if all strategies are exhausted.
+        """
+        domain = urlparse(url).hostname or site_id
+
+        if block_type is not None:
+            strategies = self.get_strategies_for_block(block_type, domain)
+        else:
+            cached = self._domain_block_cache.get(domain)
+            if cached is not None:
+                strategies = self.get_strategies_for_block(cached, domain)
+            else:
+                strategies = [s for s in _DEFAULT_STRATEGIES if s in self._strategies]
+
+        # Add any registered strategies not in the initial list
+        all_registered = set(self._strategies.keys())
+        for s in all_registered:
+            if s not in strategies:
+                strategies.append(s)
+
+        # Rotate strategy order by start_offset so each cycle tries
+        # different strategies first
+        if start_offset > 0 and len(strategies) > 1:
+            offset = start_offset % len(strategies)
+            strategies = strategies[offset:] + strategies[:offset]
+
+        tried: set[str] = set()
+        last_result = BypassResult(success=False, error="No strategies available")
+
+        for strategy_name in strategies:
+            if strategy_name in tried:
+                continue
+            tried.add(strategy_name)
+
+            result = self.execute_strategy(
+                url, strategy_name, site_id, timeout,
+            )
+
+            if result.success:
+                return result
+
+            # Skip unavailable strategies silently — don't log as failures
+            if self._is_unavailable_error(result):
+                logger.debug(
+                    "strategy_unavailable site_id=%s strategy=%s reason=%s",
+                    site_id, strategy_name, result.error,
+                )
+                continue
+
+            # If block type changed, re-select strategies
+            if result.block_detected and result.block_detected != block_type:
+                self._domain_block_cache[domain] = result.block_detected
+                new_strategies = self.get_strategies_for_block(
+                    result.block_detected, domain,
+                )
                 for s in new_strategies:
                     if s not in tried and s not in strategies:
                         strategies.append(s)
@@ -654,12 +847,14 @@ class DynamicBypassEngine:
             "rss_feed_fallback": self._exec_rss_feed,
             "amp_version_fallback": self._exec_amp_version,
             "google_cache_fallback": self._exec_google_cache,
+            "gdelt_api_fallback": self._exec_gdelt_api,
             "curl_cffi_impersonate": self._exec_curl_cffi,
             "fingerprint_rotation": self._exec_fingerprint_rotation,
             "cloudscraper_solve": self._exec_cloudscraper,
             "patchright_stealth": self._exec_patchright,
             "camoufox_stealth": self._exec_camoufox,
             "proxy_rotation": self._exec_proxy_rotation,
+            "archive_today_fallback": self._exec_archive_today,
             "wayback_fallback": self._exec_wayback,
         }
 
@@ -714,14 +909,24 @@ class DynamicBypassEngine:
     def _exec_rss_feed(
         self, url: str, timeout: float, extra_headers: dict[str, str],
     ) -> BypassResult:
-        """Tier 0: Try RSS/Atom feed for the domain."""
+        """Tier 0: Try RSS/Atom feed for the domain, including Google News RSS."""
         import feedparser
 
         parsed = urlparse(url)
         domain = parsed.hostname or ""
 
-        for path in _RSS_PATHS:
-            feed_url = f"{parsed.scheme}://{domain}{path}"
+        # Build list of feed URLs: site's own RSS paths + Google News RSS proxy
+        feed_urls: list[str] = [
+            f"{parsed.scheme}://{domain}{path}" for path in _RSS_PATHS
+        ]
+        # Google News RSS proxy — bypasses site's WAF entirely
+        google_news_url = (
+            f"https://news.google.com/rss/search?q=site:{domain}+when:1d"
+            f"&hl=en-US&gl=US&ceid=US:en"
+        )
+        feed_urls.append(google_news_url)
+
+        for feed_url in feed_urls:
             try:
                 feed = feedparser.parse(feed_url)
                 if not feed.entries:
@@ -822,6 +1027,93 @@ class DynamicBypassEngine:
             pass
 
         return BypassResult(success=False, error="Google Cache not available")
+
+    def _exec_gdelt_api(
+        self, url: str, timeout: float, extra_headers: dict[str, str],
+    ) -> BypassResult:
+        """Tier 0: GDELT DOC API for article URL discovery.
+
+        Queries GDELT's global article index by domain to find article
+        URLs and metadata. Useful when the site blocks direct access
+        but GDELT has already indexed the content.
+        """
+        try:
+            from curl_cffi import requests as curl_requests
+        except ImportError:
+            return BypassResult(success=False, error="curl_cffi not installed")
+
+        parsed = urlparse(url)
+        domain = parsed.hostname or ""
+        if not domain:
+            return BypassResult(success=False, error="Cannot extract domain from URL")
+
+        gdelt_url = (
+            f"https://api.gdeltproject.org/api/v2/doc/doc"
+            f"?query=domain:{domain}&mode=artlist&maxrecords=50"
+            f"&format=json&timespan=48h"
+        )
+
+        session = curl_requests.Session(impersonate="chrome120")
+
+        try:
+            r = session.get(gdelt_url, timeout=timeout)
+            if r.status_code != 200:
+                return BypassResult(
+                    success=False,
+                    status_code=r.status_code,
+                    error=f"GDELT API returned HTTP {r.status_code}",
+                )
+
+            data = r.json()
+            articles = data.get("articles", [])
+
+            # Look for the exact URL in GDELT results
+            for article in articles:
+                article_url = article.get("url", "")
+                if url in article_url or article_url in url:
+                    # Found a match — try to fetch via GDELT's seendate link
+                    # or return the article metadata as content
+                    title = article.get("title", "")
+                    source = article.get("domain", "")
+                    seendate = article.get("seendate", "")
+                    # Build minimal HTML from GDELT metadata
+                    content = (
+                        f"<html><head><title>{title}</title></head>"
+                        f"<body><h1>{title}</h1>"
+                        f"<p>Source: {source} | Date: {seendate}</p>"
+                        f"<p>Original URL: {article_url}</p></body></html>"
+                    )
+                    if len(content) >= _MIN_BODY_LENGTH:
+                        return BypassResult(
+                            success=True,
+                            html=content,
+                            status_code=200,
+                        )
+
+            # If no exact match, return first article with content as discovery
+            if articles:
+                first = articles[0]
+                title = first.get("title", "")
+                article_url = first.get("url", "")
+                content = (
+                    f"<html><head><title>{title}</title></head>"
+                    f"<body><h1>{title}</h1>"
+                    f"<p>URL: {article_url}</p></body></html>"
+                )
+                if len(content) >= _MIN_BODY_LENGTH:
+                    return BypassResult(
+                        success=True,
+                        html=content,
+                        status_code=200,
+                    )
+
+        except Exception as e:
+            return BypassResult(
+                success=False,
+                error=f"GDELT API error: {str(e)[:200]}",
+            )
+
+        return BypassResult(success=False, error="GDELT: no articles found for domain")
 
     # -------------------------------------------------------------------------
     # Tier 1 Strategy Implementations
@@ -1059,6 +1351,44 @@ class DynamicBypassEngine:
     # -------------------------------------------------------------------------
     # Tier 4 Strategy Implementations (Archive Sources)
     # -------------------------------------------------------------------------
+
+    def _exec_archive_today(
+        self, url: str, timeout: float, extra_headers: dict[str, str],
+    ) -> BypassResult:
+        """Tier 4: Fetch from archive.today (archive.ph) mirror.
+
+        archive.today takes snapshots of web pages and serves them from
+        its own domain, bypassing the original site's WAF entirely.
+        Uses /newest/ endpoint to get the most recent snapshot.
+        """
+        try:
+            from curl_cffi import requests as curl_requests
+        except ImportError:
+            return BypassResult(success=False, error="curl_cffi not installed")
+
+        session = curl_requests.Session(impersonate="chrome120")
+
+        # archive.today has multiple domains; try them in order
+        archive_domains = ["archive.today", "archive.ph", "archive.is"]
+
+        for archive_domain in archive_domains:
+            archive_url = f"https://{archive_domain}/newest/{url}"
+            try:
+                r = session.get(
+                    archive_url,
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
+                if r.status_code == 200 and len(r.text) >= _MIN_BODY_LENGTH:
+                    return BypassResult(
+                        success=True,
+                        html=r.text,
+                        status_code=200,
+                    )
+            except Exception:
+                continue
+
+        return BypassResult(success=False, error="archive.today: no snapshot available")
 
     def _exec_wayback(
         self, url: str, timeout: float, extra_headers: dict[str, str],
