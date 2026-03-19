@@ -132,7 +132,7 @@ NER_BATCH_SIZE = 32
 KEYBERT_TOP_N = 10
 
 # Memory management
-MAX_MEMORY_GB = 10.0  # Hard limit — M2 Pro 16GB host, 10GB crawl budget
+MAX_MEMORY_GB = 100.0  # Hard limit — 128GB host, generous budget for full NLP pipeline
 GC_BETWEEN_STAGES = True
 
 # Pipeline stage timeout defaults (seconds)

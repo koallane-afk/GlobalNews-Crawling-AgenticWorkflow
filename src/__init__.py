@@ -5,7 +5,7 @@ processes articles through an 8-stage NLP analysis pipeline,
 and produces structured Parquet/SQLite output for social trend research.
 
 Architecture: Staged Monolith (Python 3.12)
-Runtime: MacBook M2 Pro 16GB, 10GB memory budget
+Runtime: MacBook M2 Pro 16GB, 20GB memory budget
 Output: Parquet (ZSTD) + SQLite (FTS5 + vec)
 """
 

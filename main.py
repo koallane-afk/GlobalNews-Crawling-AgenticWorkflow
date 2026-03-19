@@ -460,7 +460,7 @@ Examples:
   python main.py --mode status
 
 Architecture: Staged Monolith (Python 3.12)
-Runtime: MacBook M2 Pro 16GB, 10GB memory budget
+Runtime: MacBook M2 Pro 16GB, 20GB memory budget
 Sites: 44 international news sources across 7 groups (A-G)
 Pipeline: 8 stages, 56 analysis techniques
 """,

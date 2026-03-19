@@ -6,7 +6,7 @@
 # Schema: Step 5 Architecture Blueprint, Section 5d
 #
 # Total processing time: ~30 min for 1,000 articles
-# Peak memory: ~2.4 GB (within 10 GB budget)
+# Peak memory: ~2.4 GB (within 20 GB budget)
 # 56 analysis techniques across 8 stages
 
 pipeline:
@@ -14,7 +14,7 @@ pipeline:
   python_version: "3.12"
 
   global:
-    max_memory_gb: 10               # PRD C3: MacBook M2 Pro 16GB, 10 GB pipeline limit
+    max_memory_gb: 20               # M2 Pro 16GB + swap, 20 GB pipeline limit
     log_level: "INFO"               # DEBUG | INFO | WARNING | ERROR
     gc_between_stages: true         # Force gc.collect() between stages (Step 5 architecture)
     parquet_compression: "zstd"     # ZSTD compression for all Parquet output

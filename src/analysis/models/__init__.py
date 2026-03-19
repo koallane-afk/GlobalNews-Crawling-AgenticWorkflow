@@ -4,7 +4,7 @@ Provides centralized model lifecycle management to enforce:
     - Kiwi MUST be singleton (prevents +125 MB leak per reload)
     - SBERT shared between KeyBERT and BERTopic
     - Sequential load/unload with gc.collect() between stages
-    - Memory monitoring against 10GB budget
+    - Memory monitoring against 20GB budget
 
 Modules:
     model_registry  - Singleton model loader with memory tracking
