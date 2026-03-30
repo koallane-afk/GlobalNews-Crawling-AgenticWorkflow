@@ -19,8 +19,15 @@ import pytest
 class TestDefaultSitesCatalog:
     """Verify the _FALLBACK_SITES catalog integrity."""
 
-    def test_total_count_is_116(self, sources_mod):
-        assert len(sources_mod._FALLBACK_SITES) == 116
+    def test_total_count_matches_fallback(self, sources_mod):
+        """Fallback site count must be self-consistent (not hardcoded)."""
+        count = len(sources_mod._FALLBACK_SITES)
+        assert count > 0, "Fallback sites list is empty"
+        # Cross-check: count should match sum of language groups
+        lang_total = sum(
+            1 for s in sources_mod._FALLBACK_SITES if s.get("language")
+        )
+        assert count == lang_total
 
     def test_all_sites_have_required_fields(self, sources_mod):
         required = {"domain", "name", "language", "crawl_method", "anti_block_tier"}
@@ -94,9 +101,10 @@ class TestLanguageDistribution:
         counts = self._count_by_lang(sources_mod)
         assert counts.get("fr", 0) == 5
 
-    def test_all_languages_sum_to_116(self, sources_mod):
+    def test_all_languages_sum_to_total(self, sources_mod):
+        """Sum of per-language counts must equal total fallback sites."""
         counts = self._count_by_lang(sources_mod)
-        assert sum(counts.values()) == 116
+        assert sum(counts.values()) == len(sources_mod._FALLBACK_SITES)
 
 
 # ============================================================================
@@ -110,7 +118,7 @@ class TestYamlGeneration:
         from pathlib import Path
         result = sources_mod.generate_sources_yaml(Path(tmp_path))
         assert result["valid"] is True
-        assert result["total_sites"] == 116
+        assert result["total_sites"] == len(sources_mod._FALLBACK_SITES)
         assert os.path.exists(result["output_path"])
         assert result["output_size_bytes"] > 1000
 

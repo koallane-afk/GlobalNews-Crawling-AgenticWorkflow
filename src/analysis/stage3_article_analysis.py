@@ -49,6 +49,7 @@ from src.config.constants import (
     DATA_ANALYSIS_DIR,
     EMBEDDINGS_PARQUET_PATH,
     KOBERT_MODEL_NAME,
+    MULTILINGUAL_SENTIMENT_MODEL_NAME,
     NER_PARQUET_PATH,
     PARQUET_COMPRESSION,
     PARQUET_COMPRESSION_LEVEL,
@@ -325,6 +326,7 @@ class Stage3ArticleAnalyzer:
         # Model references (lazy loaded)
         self._en_sentiment_pipeline: Any = None
         self._ko_sentiment_pipeline: Any = None
+        self._multilingual_sentiment_pipeline: Any = None
         self._zeroshot_pipeline: Any = None
 
         # Fallback analyzers
@@ -334,6 +336,7 @@ class Stage3ArticleAnalyzer:
         # Flags to track model availability
         self._en_sentiment_available = True
         self._ko_sentiment_available = True
+        self._multilingual_sentiment_available = True
         self._zeroshot_available = True
 
         # Track memory for reporting
@@ -435,6 +438,37 @@ class Stage3ArticleAnalyzer:
             )
             self._ko_sentiment_available = False
 
+    def _load_multilingual_sentiment(self) -> None:
+        """Load multilingual sentiment model for non-ko/non-en languages.
+
+        Uses cardiffnlp/twitter-xlm-roberta-base-sentiment-multilingual
+        which covers 8 languages natively (ar, en, fr, de, hi, it, pt, es)
+        and provides cross-lingual transfer for others (ko, ja, ru, zh).
+        Falls back to VADER (English-biased) if unavailable.
+        """
+        if self._multilingual_sentiment_pipeline is not None:
+            return
+        try:
+            hf_pipeline = _lazy_import_transformers()
+            logger.info("loading_model", model=MULTILINGUAL_SENTIMENT_MODEL_NAME)
+            self._multilingual_sentiment_pipeline = hf_pipeline(
+                "sentiment-analysis",
+                model=MULTILINGUAL_SENTIMENT_MODEL_NAME,
+                tokenizer=MULTILINGUAL_SENTIMENT_MODEL_NAME,
+                max_length=MAX_TEXT_LENGTH,
+                truncation=True,
+                device=self._device,
+            )
+            self._log_memory("multilingual_sentiment_loaded")
+        except Exception as e:
+            logger.warning(
+                "multilingual_sentiment_load_failed",
+                model=MULTILINGUAL_SENTIMENT_MODEL_NAME,
+                error=str(e),
+                fallback="VADER",
+            )
+            self._multilingual_sentiment_available = False
+
     def _load_zeroshot(self) -> None:
         """Load facebook/bart-large-mnli for zero-shot classification.
 
@@ -465,9 +499,11 @@ class Stage3ArticleAnalyzer:
         """Release all loaded models and reclaim memory."""
         del self._en_sentiment_pipeline
         del self._ko_sentiment_pipeline
+        del self._multilingual_sentiment_pipeline
         del self._zeroshot_pipeline
         self._en_sentiment_pipeline = None
         self._ko_sentiment_pipeline = None
+        self._multilingual_sentiment_pipeline = None
         self._zeroshot_pipeline = None
         gc.collect()
         try:
@@ -519,6 +555,46 @@ class Stage3ArticleAnalyzer:
                 logger.warning("en_sentiment_inference_error", error=str(e))
 
         # VADER fallback
+        return self._vader_fallback.analyze(text)
+
+    def _analyze_sentiment_multilingual(self, text: str) -> tuple[str, float]:
+        """Analyze non-Korean non-English text sentiment.
+
+        Uses the XLM-RoBERTa multilingual sentiment model which supports
+        8 languages natively and provides cross-lingual transfer for others.
+        Falls back to VADER if model unavailable.
+
+        Args:
+            text: Non-English, non-Korean text to analyze.
+
+        Returns:
+            Tuple of (sentiment_label, sentiment_score).
+        """
+        if not text or not text.strip():
+            return ("neutral", 0.0)
+
+        if (
+            self._multilingual_sentiment_available
+            and self._multilingual_sentiment_pipeline is not None
+        ):
+            try:
+                truncated = text[:MAX_TEXT_LENGTH * 4]
+                result = self._multilingual_sentiment_pipeline(truncated)[0]
+                raw_label = result["label"].lower()
+                raw_score = result["score"]
+
+                # Map XLM-R output labels to standard set.
+                # Model outputs: positive, negative, neutral
+                if "positive" in raw_label:
+                    return ("positive", raw_score)
+                elif "negative" in raw_label:
+                    return ("negative", -raw_score)
+                else:
+                    return ("neutral", 0.0)
+            except Exception as e:
+                logger.warning("multilingual_sentiment_error", error=str(e))
+
+        # VADER fallback (English-biased but better than always-neutral)
         return self._vader_fallback.analyze(text)
 
     def _analyze_sentiment_ko(self, text: str) -> tuple[str, float]:
@@ -580,10 +656,13 @@ class Stage3ArticleAnalyzer:
         Returns:
             Tuple of (sentiment_label, sentiment_score).
         """
-        analyze_fn = (
-            self._analyze_sentiment_ko if language == "ko"
-            else self._analyze_sentiment_en
-        )
+        if language == "ko":
+            analyze_fn = self._analyze_sentiment_ko
+        elif language == "en":
+            analyze_fn = self._analyze_sentiment_en
+        else:
+            # Non-ko/en: use multilingual model → VADER fallback
+            analyze_fn = self._analyze_sentiment_multilingual
 
         # Always compute title sentiment as baseline
         title_label, title_score = analyze_fn(title)

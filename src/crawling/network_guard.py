@@ -559,11 +559,17 @@ class NetworkGuard:
                 retry_after=retry_seconds,
             )
 
-        # 403 from news sites is always a bot block — route to escalation
+        # 403 from news sites is always a bot block — classify by body content
         if status == 403:
+            body_lower = response.text.lower() if response.text else ""
+            captcha_indicators = ["captcha", "recaptcha", "verify you are human"]
+            if any(indicator in body_lower for indicator in captcha_indicators):
+                block_type = "captcha"
+            else:
+                block_type = "ip_block"
             raise BlockDetectedError(
                 f"HTTP 403 at {url} — likely bot block",
-                block_type="ip_block",
+                block_type=block_type,
             )
 
         # Bot detection patterns in 503

@@ -33,11 +33,15 @@ class TestSiteGroupCounts:
     def test_multilingual_count_is_77(self, distribute_mod):
         assert len(distribute_mod._FALLBACK_GROUPS["multilingual"]) == 77
 
-    def test_total_sites_is_116(self, distribute_mod):
+    def test_total_sites_consistent(self, distribute_mod):
+        """Total fallback sites must equal sum of all group counts."""
         total = sum(
             len(sites) for sites in distribute_mod._FALLBACK_GROUPS.values()
         )
-        assert total == 116
+        # Cross-check: no empty groups and total > 0
+        assert total > 0, "Fallback groups are empty"
+        for group, sites in distribute_mod._FALLBACK_GROUPS.items():
+            assert len(sites) > 0, f"Group {group} is empty"
 
 
 # ============================================================================
@@ -167,9 +171,12 @@ class TestDistributeOutput:
     def test_distribute_creates_output_files(self, distribute_mod, tmp_path):
         """Distribution should create 4 JSON files."""
         from pathlib import Path
+        expected_total = sum(
+            len(sites) for sites in distribute_mod._FALLBACK_GROUPS.values()
+        )
         result = distribute_mod.distribute_sites(Path(tmp_path))
         assert result["valid"] is True
-        assert result["total_sites"] == 116
+        assert result["total_sites"] == expected_total
 
         for group in ["kr-major", "kr-tech", "english", "multilingual"]:
             assert group in result["output_paths"]

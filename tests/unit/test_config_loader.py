@@ -120,11 +120,11 @@ class TestPipelineValidation:
         assert "No 'pipeline' key" in errors[0]
 
     def test_memory_exceeds_limit(self):
-        """Memory limit > 10 GB should be flagged."""
+        """Memory limit > MAX_MEMORY_GB (100) should be flagged."""
         config = {
             "pipeline": {
                 "global": {
-                    "max_memory_gb": 20,  # Exceeds 10 GB limit
+                    "max_memory_gb": 150,  # Exceeds 100 GB host limit
                     "parquet_compression": "zstd",
                 },
                 "stages": {},

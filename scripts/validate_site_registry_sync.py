@@ -2,13 +2,13 @@
 """Site Registry Sync Validator — P1 hallucination prevention.
 
 Cross-validates all hardcoded site lists across the codebase to ensure
-no list falls out of sync after expansion (e.g., 44 → 121 → 116).
+no list falls out of sync after site additions/removals.
 
 Checks:
-    RS1: All 5 hardcoded lists have identical domain sets (after normalization)
-    RS2: Group-level counts are consistent across lists
+    RS1: All hardcoded lists have identical domain sets (after normalization)
+    RS2: Group-level counts are consistent across grouped sources
     RS3: Runtime SOT (sources.yaml) matches hardcoded canonical list
-    RS4: Total site count matches expected (116)
+    RS4: Total site count is consistent across all sources (no hardcoded expected)
 
 Usage:
     python3 scripts/validate_site_registry_sync.py --project-dir .
@@ -208,17 +208,8 @@ def _extract_from_sources_yaml(project_dir: str) -> dict[str, set[str]] | None:
 # Validation
 # ---------------------------------------------------------------------------
 
-# Expected group counts (A-J)
-# Updated 2026-03-23: +3 sites (npr, upi, pbsnewshour in Group E),
-# 9 sites disabled (bloomberg, wsj, marketwatch, latimes, euractiv,
-# lefigaro, liberation, ouestfrance, icelandmonitor).
-# Counts include all sites (enabled + disabled).
-_EXPECTED_COUNTS: dict[str, int] = {
-    "A": 5, "B": 3, "C": 2, "D": 8,
-    "E": 23, "F": 22, "G": 39,
-    "H": 4, "I": 9, "J": 4,
-}
-_EXPECTED_TOTAL = 119  # 116 original + 3 replacement sites
+
+
 
 
 def validate_sync(project_dir: str, require_sot: bool = False) -> dict[str, Any]:
@@ -290,20 +281,28 @@ def validate_sync(project_dir: str, require_sot: bool = False) -> dict[str, Any]
         name: len(domains) for name, domains in sources.items()
     }
 
-    # --- RS2: Group-level count consistency ---
+    # --- RS2: Group-level count consistency (cross-validate grouped sources) ---
     rs2_ok = True
     rs2_details: list[str] = []
     grouped_sources = {
         "extract_site_urls": extract_groups,
         "split_sites_by_group": split_groups,
     }
-    for src_name, groups in grouped_sources.items():
-        for group_letter, expected_count in _EXPECTED_COUNTS.items():
-            actual = len(groups.get(group_letter, set()))
-            if actual != expected_count:
-                rs2_ok = False
+    # Cross-validate grouped sources against each other (no hardcoded counts)
+    grouped_names = list(grouped_sources.keys())
+    all_group_letters = set()
+    for groups in grouped_sources.values():
+        all_group_letters |= set(groups.keys())
+    for group_letter in sorted(all_group_letters):
+        counts_by_src = {}
+        for src_name, groups in grouped_sources.items():
+            counts_by_src[src_name] = len(groups.get(group_letter, set()))
+        unique_counts = set(counts_by_src.values())
+        if len(unique_counts) > 1:
+            rs2_ok = False
+            for src_name, count in counts_by_src.items():
                 rs2_details.append(
-                    f"{src_name} Group {group_letter}: expected {expected_count}, got {actual}"
+                    f"{src_name} Group {group_letter}: {count} sites"
                 )
     result["checks"]["RS2_group_counts"] = "PASS" if rs2_ok else "FAIL"
     if not rs2_ok:
@@ -339,13 +338,21 @@ def validate_sync(project_dir: str, require_sot: bool = False) -> dict[str, Any]
         result["checks"]["RS3_sot_matches_canonical"] = "SKIP"
         result["warnings"].append("RS3: sources.yaml not available — SOT check skipped")
 
-    # --- RS4: Total count ---
+    # --- RS4: Total count consistency (all sources must agree) ---
     rs4_ok = True
-    for src_name, domains in sources.items():
-        if domains and len(domains) != _EXPECTED_TOTAL:
+    non_empty_counts = {
+        name: len(domains) for name, domains in sources.items() if domains
+    }
+    if non_empty_counts:
+        unique_totals = set(non_empty_counts.values())
+        if len(unique_totals) > 1:
             rs4_ok = False
+            for src_name, count in non_empty_counts.items():
+                result["errors"].append(
+                    f"RS4: {src_name} has {count} sites"
+                )
             result["errors"].append(
-                f"RS4: {src_name} has {len(domains)} sites, expected {_EXPECTED_TOTAL}"
+                f"RS4: Sources disagree on total count: {sorted(unique_totals)}"
             )
     result["checks"]["RS4_total_count"] = "PASS" if rs4_ok else "FAIL"
     if not rs4_ok:

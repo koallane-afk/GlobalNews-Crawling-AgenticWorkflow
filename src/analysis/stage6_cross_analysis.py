@@ -53,6 +53,7 @@ import numpy as np
 from src.config.constants import (
     ARTICLES_PARQUET_PATH,
     ARTICLE_ANALYSIS_PARQUET_PATH,
+    BART_MNLI_MODEL_NAME,
     CROSS_ANALYSIS_PARQUET_PATH,
     DATA_ANALYSIS_DIR,
     DATA_FEATURES_DIR,
@@ -150,7 +151,8 @@ NETWORK_MIN_EDGES: int = 10
 
 # Centrality / large-graph guard
 # Edges with co_occurrence_count < this are noise (98% of edges are weight=1).
-CENTRALITY_MIN_WEIGHT: int = 2
+# Raised from 2 to 3 to further reduce noise from NER false positives.
+CENTRALITY_MIN_WEIGHT: int = 3
 # Approximate betweenness via random k-node sampling (NetworkX docs recommend ~500).
 CENTRALITY_BETWEENNESS_K: int = 500
 
@@ -1245,11 +1247,15 @@ class Stage6CrossAnalyzer:
             return records
 
         for i in range(networks_table.num_rows):
-            entity_a = networks_table.column("entity_a")[i].as_py()
-            entity_b = networks_table.column("entity_b")[i].as_py()
+            entity_a = self._normalize_entity(
+                networks_table.column("entity_a")[i].as_py()
+            )
+            entity_b = self._normalize_entity(
+                networks_table.column("entity_b")[i].as_py()
+            )
             cooccurrence = networks_table.column("co_occurrence_count")[i].as_py()
 
-            if not entity_a or not entity_b:
+            if not entity_a or not entity_b or entity_a == entity_b:
                 continue
 
             # Heuristic relation type inference
@@ -1280,6 +1286,34 @@ class Stage6CrossAnalyzer:
 
         logger.info("stage6_kg_complete", n_edges=len(records))
         return records
+
+    @staticmethod
+    def _normalize_entity(entity: str) -> str:
+        """Normalize entity names for deduplication and noise removal.
+
+        - Strip and collapse whitespace
+        - Skip single-char entities (likely NER noise)
+        - Skip entities that are common non-English stopwords/particles
+        """
+        if not entity:
+            return ""
+        entity = " ".join(entity.split()).strip()
+
+        # Skip single-char entities (NER noise)
+        if len(entity) <= 1:
+            return ""
+
+        # Skip common noise patterns detected in network audit:
+        # Spanish/Portuguese stopwords, Korean fragments, boilerplate
+        _noise = {
+            "sin", "el que", "tanto", "los ultimos", "todas las noticias",
+            "artículos de opinión", "noticias", "últimos",
+            "있다고", "있으며", "했다고", "됐다고", "밝혔다", "전했다",
+        }
+        if entity.lower() in _noise:
+            return ""
+
+        return entity
 
     @staticmethod
     def _infer_relation_type(entity_a: str, entity_b: str) -> str:
@@ -2493,7 +2527,7 @@ class Stage6CrossAnalyzer:
             from transformers import pipeline as hf_pipeline
             self._nli_pipeline = hf_pipeline(
                 "zero-shot-classification",
-                model="facebook/bart-large-mnli",
+                model=BART_MNLI_MODEL_NAME,
                 device=-1,  # CPU
             )
             logger.info("stage6_nli_model_loaded")

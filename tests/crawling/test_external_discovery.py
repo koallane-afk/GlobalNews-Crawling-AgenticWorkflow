@@ -25,6 +25,23 @@ from unittest.mock import MagicMock, patch, PropertyMock
 import pytest
 
 from src.crawling.contracts import DiscoveredURL
+
+
+# ---------------------------------------------------------------------------
+# Helpers: generate recent dates that always pass max_age_days=1 filter
+# ---------------------------------------------------------------------------
+
+def _recent_rfc2822() -> str:
+    """Return an RFC 2822 date string for ~2 hours ago (always within 1 day)."""
+    dt = datetime.now(timezone.utc) - timedelta(hours=2)
+    # feedparser expects RFC 2822: "Mon, 17 Mar 2026 10:00:00 GMT"
+    return dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
+
+
+def _recent_gdelt_date() -> str:
+    """Return a GDELT compact date string for ~2 hours ago."""
+    dt = datetime.now(timezone.utc) - timedelta(hours=2)
+    return dt.strftime("%Y%m%dT%H%M%SZ")
 from src.crawling.url_discovery import (
     GoogleNewsDiscovery,
     GDELTDiscovery,
@@ -81,7 +98,7 @@ def _build_google_news_rss(
         <item>
             <title>{entry.get('title', 'Test Article')}</title>
             <link>{entry.get('url', 'https://example.com/article1')}</link>
-            <pubDate>{entry.get('pub_date', 'Mon, 17 Mar 2026 10:00:00 GMT')}</pubDate>
+            <pubDate>{entry.get('pub_date', _recent_rfc2822())}</pubDate>
             <source url="{entry.get('source_url', entry.get('url', ''))}">Test Source</source>
         </item>"""
 
@@ -103,16 +120,17 @@ class TestGoogleNewsDiscovery:
 
     def test_discover_parses_valid_rss(self, google_news: GoogleNewsDiscovery) -> None:
         """Valid Google News RSS feed is parsed into DiscoveredURL objects."""
+        recent = _recent_rfc2822()
         rss_xml = _build_google_news_rss([
             {
                 "url": "https://www.example.com/news/article-1",
                 "title": "Breaking News 1",
-                "pub_date": "Mon, 17 Mar 2026 10:00:00 GMT",
+                "pub_date": recent,
             },
             {
                 "url": "https://www.example.com/politics/story-2",
                 "title": "Political Update",
-                "pub_date": "Mon, 17 Mar 2026 09:00:00 GMT",
+                "pub_date": recent,
             },
         ])
 
@@ -320,16 +338,17 @@ class TestGDELTDiscovery:
 
     def test_discover_parses_valid_json(self, gdelt: GDELTDiscovery) -> None:
         """Valid GDELT JSON response is parsed into DiscoveredURL objects."""
+        recent = _recent_gdelt_date()
         response = self._make_gdelt_response([
             {
                 "url": "https://www.example.com/news/article-1",
                 "title": "Breaking News",
-                "seendate": "20260317T100000Z",
+                "seendate": recent,
             },
             {
                 "url": "https://www.example.com/politics/story-2",
                 "title": "Political Update",
-                "seendate": "20260317T090000Z",
+                "seendate": recent,
             },
         ])
 
@@ -347,16 +366,17 @@ class TestGDELTDiscovery:
 
     def test_discover_filters_wrong_domain(self, gdelt: GDELTDiscovery) -> None:
         """URLs from other domains are filtered out."""
+        recent = _recent_gdelt_date()
         response = self._make_gdelt_response([
             {
                 "url": "https://www.example.com/news/article-1",
                 "title": "Our Article",
-                "seendate": "20260317T100000Z",
+                "seendate": recent,
             },
             {
                 "url": "https://www.otherdomain.com/news/article-2",
                 "title": "Other Site",
-                "seendate": "20260317T090000Z",
+                "seendate": recent,
             },
         ])
 
@@ -391,16 +411,17 @@ class TestGDELTDiscovery:
 
     def test_discover_deduplicates_urls(self, gdelt: GDELTDiscovery) -> None:
         """Duplicate URLs are deduplicated."""
+        recent = _recent_gdelt_date()
         response = self._make_gdelt_response([
             {
                 "url": "https://www.example.com/news/article-1",
                 "title": "First",
-                "seendate": "20260317T100000Z",
+                "seendate": recent,
             },
             {
                 "url": "https://www.example.com/news/article-1",
                 "title": "Duplicate",
-                "seendate": "20260317T090000Z",
+                "seendate": recent,
             },
         ])
 
@@ -418,7 +439,7 @@ class TestGDELTDiscovery:
             {
                 "url": "https://www.example.com/news/article-1",
                 "title": "Test",
-                "seendate": "20260317T100000Z",
+                "seendate": _recent_gdelt_date(),
             },
         ])
 
@@ -470,11 +491,12 @@ class TestGDELTDiscovery:
 
     def test_discover_respects_max_results(self, gdelt: GDELTDiscovery) -> None:
         """max_results parameter limits returned URLs."""
+        recent = _recent_gdelt_date()
         articles = [
             {
                 "url": f"https://www.example.com/news/article-{i}",
                 "title": f"Article {i}",
-                "seendate": "20260317T100000Z",
+                "seendate": recent,
             }
             for i in range(20)
         ]
@@ -495,7 +517,7 @@ class TestGDELTDiscovery:
             {
                 "url": "https://www.example.com/news/article-1",
                 "title": "Markets &amp; Economy: A &quot;Complex&quot; Outlook",
-                "seendate": "20260317T100000Z",
+                "seendate": _recent_gdelt_date(),
             },
         ])
 

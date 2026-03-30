@@ -243,7 +243,12 @@ class TestAdapterStructure:
         assert adapter.REGION == "kr"
 
     def test_rss_url_set(self, adapter):
-        """Every adapter should have at least one RSS URL."""
+        """Every RSS-capable adapter should have at least one RSS URL."""
+        # Adapters with RSS_URL="" have explicitly discontinued RSS
+        # (e.g., joongang — rss.joinsmsn.com returns anti-bot challenge).
+        # These use sitemap/DOM as primary crawl method and are excluded.
+        if not adapter.RSS_URL and not getattr(adapter, "RSS_URLS", []):
+            pytest.skip(f"{adapter.SITE_ID}: RSS not supported (sitemap/DOM only)")
         rss_urls = adapter.get_rss_urls()
         assert len(rss_urls) >= 1, f"{adapter.SITE_ID}: no RSS URLs defined"
 

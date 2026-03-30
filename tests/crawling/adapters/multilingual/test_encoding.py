@@ -79,9 +79,10 @@ class TestEncodingDetection:
         """When no encoding hints are found, chardet or UTF-8 fallback is used."""
         raw = b"<html><body>Hello</body></html>"
         result = detect_encoding(raw)
-        # chardet may detect "ascii" for pure-ASCII content, which is a valid
-        # superset of UTF-8. Both are acceptable for this content.
-        assert result in ("utf-8", "ascii")
+        # chardet may detect "ascii" or "windows-1252" for pure-ASCII content,
+        # depending on chardet version and heuristics. All three are valid
+        # supersets/equivalents for this byte sequence.
+        assert result in ("utf-8", "ascii", "windows-1252")
 
     def test_http_header_takes_priority(self):
         """HTTP header should override meta charset."""

@@ -170,6 +170,12 @@ _NER_MAX_NUMERIC_RATIO = 0.8  # > 80% digits = phone number/date, not entity
 _NER_KO_SENTENCE_ENDINGS = re.compile(
     r'(거든|니까|습니다|됩니다|입니다|합니다|했다|겠다|된다|한다|세요|네요|어요|아요)$'
 )
+# Korean postposition/particle patterns inside text indicate a phrase, not an entity.
+# Common particles: 을/를 (object), 에/에서 (location), 과/와 (and), 으로 (direction),
+# 이/가 (subject when followed by more text).
+_NER_KO_PARTICLE_RE = re.compile(
+    r'(을|를|에서|에게|으로|과|와|이나|까지|부터|에는|에도|으로서|으로써)'
+)
 
 
 @dataclass
@@ -403,10 +409,14 @@ def _is_valid_entity(text: str, lang: str = "en") -> bool:
     digit_count = sum(1 for c in text if c.isdigit())
     if len(text) > 0 and digit_count / len(text) > _NER_MAX_NUMERIC_RATIO:
         return False
-    # Korean-specific: reject sentence fragments
+    # Korean-specific: reject sentence fragments and phrases with particles
     if lang == "ko":
         # Sentence endings (verb/adjective conjugations) indicate a fragment
         if _NER_KO_SENTENCE_ENDINGS.search(text):
+            return False
+        # Reject phrases containing Korean postpositions/particles
+        # (real entity names don't contain 을/를/에서/과/와 etc.)
+        if _NER_KO_PARTICLE_RE.search(text):
             return False
         # Reject if text contains spaces and is longer than 20 chars
         # (Korean entity names rarely have spaces and are short)
@@ -981,9 +991,12 @@ class NERExtractor:
         orgs: list[str] = []
         locations: list[str] = []
 
-        # Truncate very long texts to avoid OOM in NER model
-        # xlm-roberta has 512-token context window; ~2000 chars is a safe proxy
-        truncated = text[:4000] if len(text) > 4000 else text
+        # Truncate very long texts to avoid OOM in NER model.
+        # xlm-roberta has 512-token context window.
+        # Korean text has ~1.5-2x tokens per char, so use shorter limit
+        # to stay within the window and prevent garbled entity extraction.
+        max_chars = 2000 if lang == "ko" else 4000
+        truncated = text[:max_chars] if len(text) > max_chars else text
 
         if self._backend == "transformers":
             raw_entities = self._pipeline(truncated)
